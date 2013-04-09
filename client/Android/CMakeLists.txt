@@ -19,11 +19,12 @@ if(ANDROID_BUILD_JAVA)
 	if (NOT ANDROID_SDK)
 		message(FATAL_ERROR "ANDROID_SDK not set but required for building the java gui (ANDROID_BUILD_JAVA)")
 	endif()
+
 	# And isn't shiped with the android ndk/sdk so
 	# we need to find it on the local machine
-  SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER, BOTH)
+	set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER, BOTH)
 	find_program(ANT_COMMAND ant)
-  SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER, ONLY)
+	set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER, ONLY)
 
 	if(ANT_COMMAND STREQUAL "ANT_COMMAND-NOTFOUND")
 		message(FATAL_ERROR "ant not found but required to build android java")
@@ -38,3 +39,6 @@ endif(ANDROID_BUILD_JAVA)
 
 add_subdirectory(FreeRDPCore)
 add_subdirectory(aFreeRDP)
+
+add_subdirectory(iWinCloud)
+
