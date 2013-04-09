@@ -11,7 +11,7 @@
 			
 	<application android:name="com.freerdp.iwincloud.application.GlobalApp"
 		android:label="iWinCloud"
-		android:icon="@drawable/icon_launcher_freerdp" >
+		android:icon="@drawable/icon_launcher_iwincloud" >
 
 			<!-- Main activity -->
 			<activity android:name="com.freerdp.freerdpcore.presentation.HomeActivity"

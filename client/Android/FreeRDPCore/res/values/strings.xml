@@ -141,7 +141,7 @@
     <!-- Activity titles -->
     <string name="title_bookmark_settings">Connection Settings</string>
     <string name="title_application_settings">Settings</string>
-    <string name="title_home">aFreeRDP - FreeRDP for Android</string>
+    <string name="title_home">iWinCloud Remote Desktop</string>
     <string name="title_create_shortcut">RDP Connections</string>
     <string name="title_help">Help</string>
     <string name="title_about">About</string>
@@ -161,8 +161,8 @@
     <string name="dlg_msg_create_shortcut">Shortcut name:</string>
     <string name="dlg_msg_connecting">Connecting ...</string>
     <string name="dlg_msg_logging_in">Logging in ...</string>
-    <string name="dlg_title_about">About aFreeRDP</string>
-    <string name="dlg_msg_about">Version: %1$s\n\u00A9 2012 Thinstuff Technologies GmbH</string>
+    <string name="dlg_title_about">About iWinCloud Remote Desktop</string>
+    <string name="dlg_msg_about">Version: %1$s\n\u00A9 2013 iWinCloud LLC</string>
     <string name="dlg_title_create_bookmark_after_qc">Save Connection Settings?</string>
     <string name="dlg_msg_create_bookmark_after_qc">Your connection settings have not been saved! Do you want to save them?</string>
     <string name="dlg_title_save_bookmark">Save Connection?</string>

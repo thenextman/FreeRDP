@@ -48,6 +48,9 @@ FreeRDP.build
 Debug-*
 Release-*
 
+# Android
+*.keystore
+
 # Windows
 *.vcxproj
 *.vcxproj.*
