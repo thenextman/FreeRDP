@@ -108,6 +108,8 @@ public class BookmarkDB extends SQLiteOpenHelper
 		db.execSQL(sqlInsertDefaultPerfFlags);
 		db.execSQL(sqlInsertDefaultPerfFlags);
 
+		/*
+
 		String sqlInsertDefaultSessionEntry = 
 			"INSERT INTO tbl_manual_bookmarks ("
 			+ "label, "
@@ -133,6 +135,8 @@ public class BookmarkDB extends SQLiteOpenHelper
 			+ "3389, "
 			+ "1, 1, 2, 2, 0, '', '', 0);";
 		db.execSQL(sqlInsertDefaultSessionEntry);
+		
+		*/
 	}
 
 	@Override
