@@ -66,3 +66,42 @@ int broker_verde_send_connection_prefix(rdpNego* nego, char* username, char* des
 
 	return 0;
 }
+
+#define TEST_VERDE_BROKER_HOSTNAME	"corp.contoso.com"
+#define TEST_VERDE_USERNAME		"johndoe@corp.contoso.com"
+#define TEST_VERDE_DESKTOP_NAME		"CONTOSO"
+#define TEST_VERDE_SECURITY_TICKET	"3mc6yjKrLjBx/HRP2e612il+Oo6MM+aiywA5fD3IqWRH4zX1sM"
+
+int broker_verde_connect(rdpNego* nego)
+{
+	rdpSettings* settings = nego->settings;
+
+	printf("VerdeBrokerConnect\n");
+
+	settings->VerdeBrokerHostname = _strdup(TEST_VERDE_BROKER_HOSTNAME);
+
+	if (!settings->VerdeBrokerPort)
+		settings->VerdeBrokerPort = VERDE_BROKER_DEFAULT_PORT;
+
+	settings->VerdeUsername = _strdup(TEST_VERDE_USERNAME);
+
+	settings->VerdeDesktopName = _strdup(TEST_VERDE_DESKTOP_NAME);
+
+	settings->VerdeSecurityTicket = _strdup(TEST_VERDE_SECURITY_TICKET);
+
+	nego_set_target(nego, settings->VerdeBrokerHostname, settings->VerdeBrokerPort);
+
+	broker_verde_send_connection_prefix(nego, settings->VerdeUsername,
+			settings->VerdeDesktopName, settings->VerdeSecurityTicket);
+
+	return 0;
+}
+
+int nego_custom_broker_connect(rdpNego* nego)
+{
+	int status;
+
+	status = broker_verde_connect(nego);
+
+	return status;
+}

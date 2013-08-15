@@ -961,10 +961,12 @@ struct rdp_settings
 
 	/* Custom Connection Brokers */
 	ALIGN64 BOOL CustomBrokerEnabled;  /* 1472 */
-	ALIGN64 char* VerdeBrokerHostname;  /* 1473 */
-	ALIGN64 char* VerdeSecurityTicket;  /* 1474 */
-	ALIGN64 char* VerdeDesktopName;  /* 1475 */
-	UINT64 padding1536[1536 - 1476]; /* 1476 */
+	ALIGN64 UINT32 VerdeBrokerPort;  /* 1473 */
+	ALIGN64 char* VerdeBrokerHostname;  /* 1474 */
+	ALIGN64 char* VerdeUsername;  /* 1475 */
+	ALIGN64 char* VerdeDesktopName;  /* 1476 */
+	ALIGN64 char* VerdeSecurityTicket;  /* 1477 */
+	UINT64 padding1536[1536 - 1478]; /* 1478 */
 
 	/**
 	 * User Interface

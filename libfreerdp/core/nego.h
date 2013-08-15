@@ -109,6 +109,7 @@ struct rdp_nego
 	BOOL NegotiateSecurityLayer;
 	BYTE enabled_protocols[16];
 
+	rdpSettings* settings;
 	rdpTransport* transport;
 };
 

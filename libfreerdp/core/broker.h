@@ -27,7 +27,12 @@
 
 #include "nego.h"
 
-#define VERDE_MPC_SIGNATURE "VERDEmpc"
+/**
+ * VERDE Connection Broker
+ */
+
+#define VERDE_BROKER_DEFAULT_PORT	48622
+#define VERDE_MPC_SIGNATURE		"VERDEmpc"
 
 typedef struct
 {
@@ -44,7 +49,7 @@ typedef struct
 	char reserved2[64];
 } verdempc_t;
 
-int broker_verde_send_connection_prefix(rdpNego* nego, char* username, char* desktop, char* ticket);
+int nego_custom_broker_connect(rdpNego* nego);
 
 #endif /* FREERDP_CORE_BROKER_H */
 
