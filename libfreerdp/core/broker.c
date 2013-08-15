@@ -33,7 +33,7 @@ int broker_verde_send_connection_prefix(rdpNego* nego, char* username, char* des
 	ZeroMemory(&mpc, sizeof(verdempc_t));
 	strcpy(mpc.sig, VERDE_MPC_SIGNATURE);
 
-	mpc.ptype = 1;
+	mpc.ptype = 0;
 	mpc.version = 1;
 
 	strcpy(mpc.username, username);
@@ -76,18 +76,20 @@ int broker_verde_connect(rdpNego* nego)
 {
 	rdpSettings* settings = nego->settings;
 
-	printf("VerdeBrokerConnect\n");
-
-	settings->VerdeBrokerHostname = _strdup(TEST_VERDE_BROKER_HOSTNAME);
+	if (!settings->VerdeBrokerHostname)
+		settings->VerdeBrokerHostname = _strdup(TEST_VERDE_BROKER_HOSTNAME);
 
 	if (!settings->VerdeBrokerPort)
 		settings->VerdeBrokerPort = VERDE_BROKER_DEFAULT_PORT;
 
-	settings->VerdeUsername = _strdup(TEST_VERDE_USERNAME);
+	if (!settings->VerdeUsername)
+		settings->VerdeUsername = _strdup(TEST_VERDE_USERNAME);
 
-	settings->VerdeDesktopName = _strdup(TEST_VERDE_DESKTOP_NAME);
+	if (!settings->VerdeDesktopName)
+		settings->VerdeDesktopName = _strdup(TEST_VERDE_DESKTOP_NAME);
 
-	settings->VerdeSecurityTicket = _strdup(TEST_VERDE_SECURITY_TICKET);
+	if (!settings->VerdeSecurityTicket)
+		settings->VerdeSecurityTicket = _strdup(TEST_VERDE_SECURITY_TICKET);
 
 	nego_set_target(nego, settings->VerdeBrokerHostname, settings->VerdeBrokerPort);
 
