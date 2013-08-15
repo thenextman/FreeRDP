@@ -58,6 +58,8 @@ set(${MODULE_PREFIX}_SRCS
 	mcs.h
 	nla.c
 	nla.h
+	broker.c
+	broker.h
 	nego.c
 	nego.h
 	info.c

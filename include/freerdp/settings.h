@@ -958,7 +958,13 @@ struct rdp_settings
 	ALIGN64 rdpRsaKey* RdpServerRsaKey; /* 1413 */
 	ALIGN64 rdpCertificate* RdpServerCertificate; /* 1414 */
 	UINT64 padding1472[1472 - 1350]; /* 1415 */
-	UINT64 padding1536[1536 - 1472]; /* 1472 */
+
+	/* Custom Connection Brokers */
+	ALIGN64 BOOL CustomBrokerEnabled;  /* 1472 */
+	ALIGN64 char* VerdeBrokerHostname;  /* 1473 */
+	ALIGN64 char* VerdeSecurityTicket;  /* 1474 */
+	ALIGN64 char* VerdeDesktopName;  /* 1475 */
+	UINT64 padding1536[1536 - 1476]; /* 1476 */
 
 	/**
 	 * User Interface

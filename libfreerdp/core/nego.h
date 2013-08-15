@@ -20,6 +20,9 @@
 #ifndef FREERDP_CORE_NEGO_H
 #define FREERDP_CORE_NEGO_H
 
+typedef struct rdp_nego rdpNego;
+
+#include "broker.h"
 #include "transport.h"
 
 #include <freerdp/types.h>
@@ -108,10 +111,10 @@ struct rdp_nego
 
 	rdpTransport* transport;
 };
-typedef struct rdp_nego rdpNego;
 
 BOOL nego_connect(rdpNego* nego);
 
+BOOL nego_tcp_connect(rdpNego* nego);
 BOOL nego_send_preconnection_pdu(rdpNego* nego);
 
 void nego_attempt_ext(rdpNego* nego);
