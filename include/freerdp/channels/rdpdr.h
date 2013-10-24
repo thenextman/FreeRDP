@@ -204,6 +204,7 @@ enum RDPDR_PRINTER_ANNOUNCE_FLAG
 #endif
 
 /* [MS-FSCC] FSCTL Structures */
+#ifndef _WIN32
 enum FSCTL_STRUCTURE
 {
 	FSCTL_CREATE_OR_GET_OBJECT_ID = 0x900c0,
@@ -232,6 +233,7 @@ enum FSCTL_STRUCTURE
 	FSCTL_SIS_COPYFILE = 0x90100,
 	FSCTL_WRITE_USN_CLOSE_RECORD = 0x900ef
 };
+#endif
 
 /* [MS-FSCC] FileFsAttributeInformation.FileSystemAttributes */
 
@@ -260,12 +262,16 @@ enum FSCTL_STRUCTURE
 
 #endif
 
+#ifndef _WIN32
 /* [MS-FSCC] FileFsDeviceInformation.DeviceType */
 enum FILE_FS_DEVICE_TYPE
 {
 	FILE_DEVICE_CD_ROM = 0x00000002,
 	FILE_DEVICE_DISK = 0x00000007
 };
+#else
+#include <winioctl.h>
+#endif
 
 /* [MS-FSCC] FileFsDeviceInformation.Characteristics */
 enum FILE_FS_DEVICE_FLAG

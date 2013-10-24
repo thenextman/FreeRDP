@@ -21,7 +21,9 @@
 #ifndef FREERDP_CHANNEL_SMARTCARD_CLIENT_MAIN_H
 #define FREERDP_CHANNEL_SMARTCARD_CLIENT_MAIN_H
 
+#ifndef _WIN32
 #include <inttypes.h>
+#endif
 
 #include <freerdp/utils/list.h>
 #include <freerdp/utils/debug.h>
@@ -85,11 +87,11 @@
 
 struct _COMPLETIONIDINFO
 {
-        UINT32 ID;              /* CompletionID */
+        UINT32 ID;           /* CompletionID */
         BOOL duplicate;      /* Indicates whether or not this 
-				 * CompletionID is a duplicate of an 
-                                 * earlier, outstanding, CompletionID.
-                                 */
+                              * CompletionID is a duplicate of an 
+                              * earlier, outstanding, CompletionID.
+                             */
 };
 typedef struct _COMPLETIONIDINFO COMPLETIONIDINFO;
 
@@ -106,13 +108,14 @@ struct _SMARTCARD_DEVICE
 	HANDLE irpEvent;
 	HANDLE stopEvent;
 
-        LIST* CompletionIds;
-        HANDLE CompletionIdsMutex;
+	LIST* CompletionIds;
+	HANDLE CompletionIdsMutex;
 };
 typedef struct _SMARTCARD_DEVICE SMARTCARD_DEVICE;
 
 #ifdef WITH_DEBUG_SCARD
 #define DEBUG_SCARD(fmt, ...) DEBUG_CLASS(SCARD, fmt, ## __VA_ARGS__)
+#define DEBUG_SCARD2(buffer, fmt, ...) DEBUG_CLASS2(buffer, SCARD, fmt, ## __VA_ARGS__)
 #else
 #define DEBUG_SCARD(fmt, ...) DEBUG_NULL(fmt, ## __VA_ARGS__)
 #endif

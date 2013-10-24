@@ -30,6 +30,51 @@
 
 #include "trio.h"
 
+int winpr_HexDumpToBuffer(char* buffer, BYTE* data, int length)
+{
+	BYTE* p = data;
+	int i, line, offset = 0;
+	int x = 0;
+
+	x += sprintf(buffer+x, "     0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F\n");
+
+	while (offset < length)
+	{
+		x += sprintf(buffer+x, "%04x ", offset);
+
+		line = length - offset;
+
+		if (line > WINPR_HEXDUMP_LINE_LENGTH)
+			line = WINPR_HEXDUMP_LINE_LENGTH;
+
+		for (i = 0; i < line; i++)
+			x += sprintf(buffer+x, "%02x ", p[i]);
+
+		for (; i < WINPR_HEXDUMP_LINE_LENGTH; i++)
+			x += sprintf(buffer+x, "   ");
+
+		for (i = 0; i < line; i++)
+			x += sprintf(buffer+x, "%c", (p[i] >= 0x20 && p[i] < 0x7F) ? p[i] : '.');
+
+		x += sprintf(buffer+x, "\n");
+
+		offset += line;
+		p += line;
+	}
+
+	return x;
+}
+
+void winpr_HexDumpf(BYTE* data, int length, const char* format, ...)
+{
+	va_list args;
+	va_start(format, args);
+	vfprintf(stderr, format, args);
+	va_end(args);
+
+	winpr_HexDump(data, length);
+}
+
 void winpr_HexDump(BYTE* data, int length)
 {
 	BYTE* p = data;
@@ -58,6 +103,7 @@ void winpr_HexDump(BYTE* data, int length)
 		offset += line;
 		p += line;
 	}
+	fflush(stderr);
 }
 
 int wvprintfx(const char *fmt, va_list args)
@@ -81,3 +127,16 @@ int wvsnprintfx(char *buffer, size_t bufferSize, const char* fmt, va_list args)
 {
 	return trio_vsnprintf(buffer, bufferSize, fmt, args);
 }
+
+int wprintfxToBuffer(char *buffer, const char *fmt, ...)
+{
+	va_list args;
+	int status;
+
+	va_start(args, fmt);
+	status = trio_sprintf(buffer, fmt, args);
+	va_end(args);
+
+	return status;
+}
+
