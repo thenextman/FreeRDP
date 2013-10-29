@@ -28,6 +28,11 @@
 #define _LARGEFILE64_SOURCE
 
 #include <sys/time.h>
+#else
+#include <windows.h>
+#ifndef FILE_DEVICE_DISK
+#define FILE_DEVICE_DISK 0x00000007
+#endif
 #endif
 
 #include <errno.h>
