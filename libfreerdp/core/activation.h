@@ -37,7 +37,7 @@
 #define FONTLIST_FIRST			0x0001
 #define FONTLIST_LAST			0x0002
 
-BOOL rdp_recv_deactivate_all(rdpRdp* rdp, wStream* s);
+int rdp_recv_deactivate_all(rdpRdp* rdp, wStream* s);
 BOOL rdp_send_deactivate_all(rdpRdp* rdp);
 
 BOOL rdp_recv_synchronize_pdu(rdpRdp* rdp, wStream* s);

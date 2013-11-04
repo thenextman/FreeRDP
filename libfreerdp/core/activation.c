@@ -276,8 +276,9 @@ BOOL rdp_send_server_font_map_pdu(rdpRdp* rdp)
 	return rdp_send_data_pdu(rdp, s, DATA_PDU_TYPE_FONT_MAP, rdp->mcs->user_id);
 }
 
-BOOL rdp_recv_deactivate_all(rdpRdp* rdp, wStream* s)
+int rdp_recv_deactivate_all(rdpRdp* rdp, wStream* s)
 {
+	int status;
 	UINT16 lengthSourceDescriptor;
 
 	if (rdp->state == CONNECTION_STATE_ACTIVE)
@@ -315,14 +316,16 @@ BOOL rdp_recv_deactivate_all(rdpRdp* rdp, wStream* s)
 
 	while (rdp->state != CONNECTION_STATE_ACTIVE)
 	{
-		if (rdp_check_fds(rdp) < 0)
-			return FALSE;
+		status = rdp_check_fds(rdp);
+
+		if (status != 0)
+			return status;
 
 		if (rdp->disconnect)
 			break;
 	}
 
-	return TRUE;
+	return 0;
 }
 
 BOOL rdp_send_deactivate_all(rdpRdp* rdp)

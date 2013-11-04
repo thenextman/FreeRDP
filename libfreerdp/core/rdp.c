@@ -849,8 +849,7 @@ static int rdp_recv_tpkt_pdu(rdpRdp* rdp, wStream* s)
 					break;
 
 				case PDU_TYPE_DEACTIVATE_ALL:
-					if (!rdp_recv_deactivate_all(rdp, s))
-						return -1;
+					return rdp_recv_deactivate_all(rdp, s);
 					break;
 
 				case PDU_TYPE_SERVER_REDIRECTION:
@@ -974,7 +973,17 @@ void rdp_set_blocking_mode(rdpRdp* rdp, BOOL blocking)
 int rdp_check_fds(rdpRdp* rdp)
 {
 	int status;
+
 	status = transport_check_fds(rdp->transport);
+
+	if (status == 1)
+	{
+		/* Last call to transport_check_fds resulted in a session redirection */
+
+		if (!rdp_client_redirect(rdp))
+			return -1;
+	}
+
 	return status;
 }
 

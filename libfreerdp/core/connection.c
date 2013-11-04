@@ -166,8 +166,9 @@
  * @return true if the connection succeeded. FALSE otherwise.
  */
 
-BOOL rdp_client_connect(rdpRdp* rdp)
+int rdp_client_connect(rdpRdp* rdp)
 {
+	int status;
 	rdpSettings* settings = rdp->settings;
 
 	if (rdp->settingsCopy)
@@ -245,14 +246,16 @@ BOOL rdp_client_connect(rdpRdp* rdp)
 	if (!nego_connect(rdp->nego))
 	{
 		fprintf(stderr, "Error: protocol security negotiation or connection failure\n");
-		return FALSE;
+		return -1;
 	}
 
 	if ((rdp->nego->selected_protocol & PROTOCOL_TLS) || (rdp->nego->selected_protocol == PROTOCOL_RDP))
 	{
 		if ((settings->Username != NULL) && ((settings->Password != NULL) ||
 				(settings->RedirectionPassword != NULL && settings->RedirectionPasswordLength > 0)))
+		{
 			settings->AutoLogonEnabled = TRUE;
+		}
 	}
 
 	rdp_set_blocking_mode(rdp, FALSE);
@@ -266,17 +269,20 @@ BOOL rdp_client_connect(rdpRdp* rdp)
 		{
 			connectErrorCode = MCSCONNECTINITIALERROR;                      
 		}
+
 		fprintf(stderr, "Error: unable to send MCS Connect Initial\n");
-		return FALSE;
+		return -1;
 	}
 
 	while (rdp->state != CONNECTION_STATE_ACTIVE)
 	{
-		if (rdp_check_fds(rdp) < 0)
-			return FALSE;
+		status = rdp_check_fds(rdp);
+
+		if (status != 0)
+			return status;
 	}
 
-	return TRUE;
+	return 0;
 }
 
 BOOL rdp_client_disconnect(rdpRdp* rdp)
@@ -286,7 +292,7 @@ BOOL rdp_client_disconnect(rdpRdp* rdp)
 
 BOOL rdp_client_redirect(rdpRdp* rdp)
 {
-	BOOL status;
+	int status;
 	rdpSettings* settings = rdp->settings;
 
 	rdp_client_disconnect(rdp);
@@ -332,7 +338,7 @@ BOOL rdp_client_redirect(rdpRdp* rdp)
 
 	status = rdp_client_connect(rdp);
 
-	return status;
+	return (status < 0) ? FALSE : TRUE;
 }
 
 static BYTE fips_ivec[8] = { 0x12, 0x34, 0x56, 0x78, 0x90, 0xAB, 0xCD, 0xEF };

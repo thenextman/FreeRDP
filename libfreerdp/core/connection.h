@@ -47,7 +47,7 @@ enum CONNECTION_STATE
 	CONNECTION_STATE_ACTIVE = 13
 };
 
-BOOL rdp_client_connect(rdpRdp* rdp);
+int rdp_client_connect(rdpRdp* rdp);
 BOOL rdp_client_redirect(rdpRdp* rdp);
 BOOL rdp_client_connect_mcs_connect_response(rdpRdp* rdp, wStream* s);
 BOOL rdp_client_connect_mcs_attach_user_confirm(rdpRdp* rdp, wStream* s);

@@ -55,10 +55,13 @@
  */
 BOOL freerdp_connect(freerdp* instance)
 {
+	BOOL status;
 	rdpRdp* rdp;
+	int rdp_status;
 	rdpSettings* settings;
-	BOOL status = FALSE;
 	ConnectionResultEventArgs e;
+
+	status = FALSE;
 
 	/* We always set the return code to 0 before we start the connect sequence*/
 	connectErrorCode = 0;
@@ -89,10 +92,12 @@ BOOL freerdp_connect(freerdp* instance)
 		goto freerdp_connect_finally;
 	}
 
-	status = rdp_client_connect(rdp);
+	rdp_status = rdp_client_connect(rdp);
+
+	status = (rdp_status < 0) ? FALSE : TRUE;
 
 	/* --authonly tests the connection without a UI */
-	if (instance->settings->AuthenticationOnly)
+	if (settings->AuthenticationOnly)
 	{
 		fprintf(stderr, "%s:%d: Authentication only, exit status %d\n", __FILE__, __LINE__, !status);
 		goto freerdp_connect_finally;
@@ -103,6 +108,7 @@ BOOL freerdp_connect(freerdp* instance)
 		if (instance->settings->DumpRemoteFx)
 		{
 			instance->update->pcap_rfx = pcap_open(instance->settings->DumpRemoteFxFile, TRUE);
+
 			if (instance->update->pcap_rfx)
 				instance->update->dump_rfx = TRUE;
 		}
@@ -183,7 +189,7 @@ BOOL freerdp_connect(freerdp* instance)
 
 	SetEvent(rdp->transport->connectedEvent);
 
-	freerdp_connect_finally:
+freerdp_connect_finally:
 
 	EventArgsInit(&e, "freerdp");
 	e.result = status ? 0 : -1;

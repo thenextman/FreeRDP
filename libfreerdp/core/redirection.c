@@ -314,7 +314,7 @@ BOOL rdp_recv_server_redirection_pdu(rdpRdp* rdp, wStream* s)
 	if (redirection->flags & LB_NOREDIRECT)
 		return 0;
 
-	return rdp_client_redirect(rdp);
+	return 1;
 }
 
 int rdp_recv_redirection_packet(rdpRdp* rdp, wStream* s)
@@ -335,9 +335,6 @@ int rdp_recv_enhanced_security_redirection_packet(rdpRdp* rdp, wStream* s)
 
 	if (status < 0)
 		return status;
-
-	if (!Stream_SafeSeek(s, 1)) /* pad2Octets (1 byte) */
-		return -1;
 
 	return status;
 }
