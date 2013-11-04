@@ -256,6 +256,7 @@ static void smartcard_irp_complete(IRP* irp)
 #ifdef WITH_DEBUG_SCARD
 		{
 			char buffer[4096] = {0x20};
+			static const int bufferSize = ARRAYSIZE(buffer);
 			int x = 0;
 			UINT32 ioctlcode;
 			int pos;
@@ -265,10 +266,10 @@ static void smartcard_irp_complete(IRP* irp)
 			Stream_Read_UINT32(irp->input, ioctlcode);
 			Stream_SetPosition(irp->input, pos);
 
-			x += sprintf(&buffer[x], "\nInput: (%#x) %s Sending IRP: DeviceId %d FileId %d CompletionId %d\n", ioctlcode, ioctlToName(ioctlcode), irp->device->id, irp->FileId, irp->CompletionId);
-			x += winpr_HexDumpToBuffer(&buffer[x], Stream_Buffer(irp->input), Stream_Length(irp->input));
-			x += sprintf(&buffer[x], "Output: (%#x) %s Sending IRP: DeviceId %d FileId %d CompletionId %d\n", ioctlcode, ioctlToName(ioctlcode), irp->device->id, irp->FileId, irp->CompletionId);
-			x += winpr_HexDumpToBuffer(&buffer[x], Stream_Buffer(irp->output), Stream_GetPosition(irp->output));
+			x += _snprintf(&buffer[x], bufferSize, "\nInput: (%#x) %s Sending IRP: DeviceId %d FileId %d CompletionId %d\n", ioctlcode, ioctlToName(ioctlcode), irp->device->id, irp->FileId, irp->CompletionId);
+			x += winpr_HexDumpToBuffer(&buffer[x], bufferSize-x, Stream_Buffer(irp->input), Stream_Length(irp->input));
+			x += _snprintf(&buffer[x], bufferSize-x, "Output: (%#x) %s Sending IRP: DeviceId %d FileId %d CompletionId %d\n", ioctlcode, ioctlToName(ioctlcode), irp->device->id, irp->FileId, irp->CompletionId);
+			x += winpr_HexDumpToBuffer(&buffer[x], bufferSize-x, Stream_Buffer(irp->output), Stream_GetPosition(irp->output));
 			DEBUG_SCARD("%s\n", buffer);
 		}
 #endif
@@ -316,7 +317,7 @@ static void smartcard_irp_request(DEVICE* device, IRP* irp)
 	if ((irp->MajorFunction == IRP_MJ_DEVICE_CONTROL) && smartcard_async_op(irp))
 	{
 		/* certain potentially long running operations get their own thread */
-		SMARTCARD_IRP_WORKER* irpWorker = malloc(sizeof(SMARTCARD_IRP_WORKER));
+		SMARTCARD_IRP_WORKER* irpWorker = (SMARTCARD_IRP_WORKER*)malloc(sizeof(SMARTCARD_IRP_WORKER));
 
 		irpWorker->thread = CreateThread(NULL, 0,
 				(LPTHREAD_START_ROUTINE) smartcard_process_irp_thread_func,

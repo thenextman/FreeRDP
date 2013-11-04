@@ -35,11 +35,11 @@ extern "C" {
 
 WINPR_API void winpr_HexDump(BYTE* data, int length);
 WINPR_API void winpr_HexDumpf(BYTE* data, int length, const char* format, ...);
-WINPR_API int winpr_HexDumpToBuffer(char* buffer, BYTE* data, int length);
+WINPR_API int winpr_HexDumpToBuffer(char* buffer, size_t count, BYTE* data, int length);
 
 WINPR_API int wprintfx(const char *fmt, ...);
 WINPR_API int wvprintfx(const char *fmt, va_list args);
-WINPR_API int wprintfxToBuffer(char* buffer, const char *fmt, ...);
+WINPR_API int wprintfxToBuffer(char* buffer, size_t count, const char *fmt, ...);
 WINPR_API int wvsnprintfx(char *buffer, size_t bufferSize, const char* fmt, va_list args);
 
 #ifdef __cplusplus

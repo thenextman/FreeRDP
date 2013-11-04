@@ -260,6 +260,7 @@ rdpSettings* freerdp_settings_new(void* instance)
 		settings->Authentication = TRUE;
 		settings->AuthenticationOnly = FALSE;
 		settings->CredentialsFromStdin = FALSE;
+		settings->CredentialsType = 1;
 
 		settings->ChannelCount = 0;
 		settings->ChannelDefArraySize = 32;

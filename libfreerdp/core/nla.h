@@ -35,19 +35,6 @@ typedef struct rdp_credssp rdpCredssp;
 
 #include "transport.h"
 
-typedef struct _SC_Csp_Data
-{
-	PWSTR pszCardName;
-	UINT cbCardName;
-	PWSTR pszReaderName;
-	UINT cbReaderName;
-	PWSTR pszContainerName;
-	UINT cbContainerName;
-	PWSTR pszCspName;
-	UINT cbCspName;
-} SC_CSP_DATA, *PSC_CSP_DATA;
-
-
 struct rdp_credssp
 {
 	BOOL server;
@@ -67,10 +54,10 @@ struct rdp_credssp
 	LPWSTR ServicePrincipalName;
 	SEC_WINNT_AUTH_IDENTITY identity;
 	//SEC_WINNT_AUTH_IDENTITY_EX identity;
-	int CredentialType;
 	PTCHAR providerName;
 	PSecurityFunctionTable table;
 	SecPkgContext_Sizes ContextSizes;
+	int cbSignature;
 };
 
 int credssp_authenticate(rdpCredssp* credssp);

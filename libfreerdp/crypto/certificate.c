@@ -33,11 +33,44 @@
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
 
+#include <freerdp/utils/debug.h>
+
 static const char certificate_store_dir[] = "certs";
 static const char certificate_server_dir[] = "server";
 static const char certificate_known_hosts_file[] = "known_hosts";
 
 #include <freerdp/crypto/certificate.h>
+
+DWORD MakeDirectory(char* path)
+{
+#ifndef WIN32
+	/* Non win32 winpr handles recursize directory creation */
+	return CreateDirectoryA(path, 0);
+#else
+	char dir[MAX_PATH] = {0};
+
+	
+	char* token = strstr(path, "\\");
+	if (token) {
+		do {
+			strncpy(dir, path, token-path);
+			if (dir[1] != ':' && dir[2] != 0x00 && ! PathFileExistsA(dir)) {
+				if (! CreateDirectoryA(dir, 0)) {
+					return GetLastError();
+				}
+			}
+		} while ((token=strstr(token+1, "\\")));
+	}
+
+	if (! PathFileExistsA(path)) {
+		if (! CreateDirectoryA(path, 0)) {
+			return GetLastError();
+		}
+	}
+
+	return ERROR_SUCCESS;
+#endif
+}
 
 void certificate_store_init(rdpCertificateStore* certificate_store)
 {
@@ -48,7 +81,11 @@ void certificate_store_init(rdpCertificateStore* certificate_store)
 
 	if (!PathFileExistsA(settings->ConfigPath))
 	{
-		CreateDirectoryA(settings->ConfigPath, 0);
+		if (! MakeDirectory(settings->ConfigPath)) {
+			DEBUG_ERROR("Failed to create configuration directory %s. Error: %#x", settings->ConfigPath, GetLastError());
+			return;
+		}
+
 		fprintf(stderr, "creating directory %s\n", settings->ConfigPath);
 	}
 
@@ -56,7 +93,10 @@ void certificate_store_init(rdpCertificateStore* certificate_store)
 
 	if (!PathFileExistsA(certificate_store->path))
 	{
-		CreateDirectoryA(certificate_store->path, 0);
+		if (! MakeDirectory(certificate_store->path)) {
+			DEBUG_ERROR("Failed to create certificate store path %s. Error: %#x", certificate_store->path, GetLastError());
+			return;
+		}
 		fprintf(stderr, "creating directory %s\n", certificate_store->path);
 	}
 
@@ -64,7 +104,10 @@ void certificate_store_init(rdpCertificateStore* certificate_store)
 
 	if (!PathFileExistsA(server_path))
 	{
-		CreateDirectoryA(server_path, 0);
+		if (! MakeDirectory(server_path)) {
+			DEBUG_ERROR("Failed to create server path %s. Error: %#x", server_path, GetLastError());
+			return;
+		}
 		fprintf(stderr, "creating directory %s\n", server_path);
 	}
 

@@ -43,53 +43,52 @@
 
 #include "wf_interface.h"
 
+#if defined(WIN32)
+#include <conio.h>
 #pragma comment(lib,"winscard")
+#endif
 
+#if defined(LINUX)
+#include <unistd.h>
+#include <termios.h>
 
-//#include <wincred.h>
-#define OFFSET(type, field) ((ULONG_PTR)(&((type *)0)->field))
-
-typedef struct _SC_Csp_Data
+int _getch(unsigned char echo)
 {
-	PWSTR pszCardName;
-	UINT cbCardName;
-	PWSTR pszReaderName;
-	UINT cbReaderName;
-	PWSTR pszContainerName;
-	UINT cbContainerName;
-	PWSTR pszCspName;
-	UINT cbCspName;
-} SC_CSP_DATA, *PSC_CSP_DATA;
+	struct termios savedState, newState;
+	int c;
 
-extern SC_CSP_DATA gSCCspData;
+	if (-1 == tcgetattr(STDIN_FILENO, &savedState))
+	{
+		return EOF;     /* error on tcgetattr */
+	}
 
-BOOL CopyCspDataValue(PKERB_SMARTCARD_CSP_INFO cspInfo, PWSTR* buffer, PUINT len, DWORD offset)
-{
-				DWORD bufferLen = cspInfo->dwCspInfoLen - (ULONG) OFFSET(KERB_SMARTCARD_CSP_INFO, bBuffer); // (pInfo->nCardNameOffset*sizeof(TCHAR));
-				size_t fieldLen = 0;
-	/*
-				PWSTR pszStart = (PWSTR)&cspInfo->bBuffer + (offset * sizeof(WCHAR));
-				PWSTR pszEnd = (PWSTR)&cspInfo->bBuffer+bufferLen;
-				*len = 0;
-				while (pszStart <= pszEnd) {
-					*len += sizeof(WCHAR);
+	newState = savedState;
 
-					if (L'\0' == *pszStart) {
-						break;
-					}
+	if ((echo = !echo)) /* yes i'm doing an assignment in an if clause */
+	{
+		echo = ECHO;    /* echo bit to disable echo */
+	}
 
-					pszStart++;
-				}
-				*buffer =  (PWSTR)malloc(*len);
-	*/
-				STRSAFE_PCNZWCH start = (&cspInfo->bBuffer)+offset;
-				StringCbLength(start, bufferLen, &fieldLen);
-				*buffer = (PWSTR)malloc(fieldLen);
-				RtlCopyMemory(*buffer, &cspInfo->bBuffer+offset, fieldLen);
-				*len = fieldLen;
-				return TRUE;
+	/* disable canonical input and disable echo.  set minimal input to 1. */
+	newState.c_lflag &= ~(echo | ICANON);
+	newState.c_cc[VMIN] = 1;
+
+	if (-1 == tcsetattr(STDIN_FILENO, TCSANOW, &newState))
+	{
+		return EOF;     /* error on tcsetattr */
+	}
+
+	c = getchar();      /* block (withot spinning) until we get a keypress */
+
+	/* restore the saved state */
+	if (-1 == tcsetattr(STDIN_FILENO, TCSANOW, &savedState))
+	{
+		return EOF;     /* error on tcsetattr */
+	}
+
+	return c;
 }
-
+#endif
 INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
 	int index;
@@ -102,31 +101,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	RDP_CLIENT_ENTRY_POINTS clientEntryPoints;
 	DWORD dwResult;
 
-	PVOID   pvInAuthBlob = NULL;
-	ULONG   cbInAuthBlob = 0;
-	PVOID   pvAuthBlob = NULL;
-	ULONG   cbAuthBlob = 0;
-	CREDUI_INFO ui;
-	ULONG   ulAuthPackage = 0;
-	BOOL    fSave = FALSE;
-
-	WCHAR   szUsername[MAX_PATH] = {0};
-	DWORD   cchUsername = ARRAYSIZE(szUsername);
-	WCHAR   szPassword[MAX_PATH] = {0};
-	DWORD		cchPassword = ARRAYSIZE(szPassword);
-	WCHAR   szDomain[MAX_PATH] = {0};
-	DWORD   cchDomain = ARRAYSIZE(szDomain);
-	BOOL ret;
-	DWORD flags = CRED_PACK_PROTECTED_CREDENTIALS | CRED_PACK_GENERIC_CREDENTIALS;
-
 	gLogMutex = CreateMutex(NULL, FALSE, NULL);
-
-	// Display a dialog box to request credentials.
-	ui.cbSize = sizeof(ui);
-	ui.hwndParent = NULL; //GetConsoleWindow();
-	ui.pszMessageText = L"Connect to RDP server";
-	ui.pszCaptionText = L"Enter your credentials";
-	ui.hbmBanner = NULL;
 
 	ZeroMemory(&clientEntryPoints, sizeof(RDP_CLIENT_ENTRY_POINTS));
 	clientEntryPoints.Size = sizeof(RDP_CLIENT_ENTRY_POINTS);
@@ -151,88 +126,9 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 	if (status)
 	{
-		_getch();
 		freerdp_client_context_free(context);
+		_getch();
 		return 0;
-	}
-
-	dwResult = CredUIPromptForWindowsCredentials(
-		&ui,             // Customizing information
-		0,               // Error code to display
-		&ulAuthPackage,  // Authorization package
-		NULL,    // Credential byte array
-		0,    // Size of credential input buffer
-		&pvAuthBlob,     // Output credential byte array
-		&cbAuthBlob,     // Size of credential byte array
-		&fSave,          // Select the save check box.
-		CREDUIWIN_AUTHPACKAGE_ONLY
-		);
-	if (dwResult != NO_ERROR) {
-		return 0;
-	}
-
-	{
-		PKERB_INTERACTIVE_LOGON pLogon = (PKERB_INTERACTIVE_LOGON)pvAuthBlob;
-
-		switch (pLogon->MessageType) {
-		case 13 /*KerbCertificateLogon*/:
-		case KerbSmartCardLogon:
-			{
-				int x = 0;
-				PWSTR pszCardName = NULL;
-				PWSTR pszContainerName = NULL;
-
-				DWORD cardNameLen = 0;
-				DWORD containerNameLen = 0;
-
-				PKERB_CERTIFICATE_LOGON pCertLogon = (PKERB_CERTIFICATE_LOGON)pvAuthBlob;
-				unsigned int csp_offset = (UINT)pCertLogon->CspData;
-
-				PKERB_SMARTCARD_CSP_INFO pInfo = (PKERB_SMARTCARD_CSP_INFO)((PBYTE)pvAuthBlob+csp_offset);
-
-				CopyCspDataValue(pInfo, &gSCCspData.pszCardName, &gSCCspData.cbCardName, pInfo->nCardNameOffset);
-				CopyCspDataValue(pInfo, &gSCCspData.pszReaderName, &gSCCspData.cbReaderName, pInfo->nReaderNameOffset);
-				CopyCspDataValue(pInfo, &gSCCspData.pszContainerName, &gSCCspData.cbContainerName, pInfo->nContainerNameOffset);
-				CopyCspDataValue(pInfo, &gSCCspData.pszCspName, &gSCCspData.cbCspName, pInfo->nCSPNameOffset);
-				break;
-			}
-
-		default:
-			break;
-		}
-	}
-
-	ret = CredUnPackAuthenticationBuffer(flags, pvAuthBlob, cbAuthBlob, &szUsername[0], &cchUsername, &szDomain[0], &cchDomain, &szPassword[0], &cchPassword); 
-	if (ret == TRUE) {
-		int len = 0;
-#if 0
-		if (CredIsMarshaledCredential(szUsername)) {
-			CRED_MARSHAL_TYPE cmType;
-			void* cmData;
-			PCERT_CREDENTIAL_INFO ci;
-			CredUnmarshalCredential(szUsername, &cmType, &cmData);
-
-			ci = (PCERT_CREDENTIAL_INFO)cmData;
-			len = ci->cbSize;
-			settings->Username = (char *)malloc(len);
-			StringCbCopyA(settings->Username, len, (STRSAFE_LPCSTR)ci->rgbHashOfCert);
-		} else {
-#else
-		{
-			len = cchUsername + 1;
-			settings->Username = (char*)malloc(len);
-			WideCharToMultiByte(CP_ACP, 0, szUsername, cchUsername, settings->Username, len, NULL, NULL);
-		}
-#endif
-
-		len = cchDomain + 1;
-		settings->Domain = (char*)malloc(len);
-		WideCharToMultiByte(CP_ACP, 0, szDomain, cchDomain, settings->Domain, len, NULL, NULL);
-
-		len = cchPassword + 1;
-		settings->Password = (char*)malloc(len);
-		WideCharToMultiByte(CP_ACP, 0, szPassword, cchPassword, settings->Password, len, NULL, NULL);
-		settings->CredentialsType = 2;
 	}
 
 	freerdp_client_start(context);
@@ -244,8 +140,6 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	GetExitCodeThread(thread, &dwExitCode);
 
 	freerdp_client_stop(context);
-
-	//_getch();
 
 	freerdp_client_context_free(context);
 

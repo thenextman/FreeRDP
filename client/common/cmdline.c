@@ -228,7 +228,11 @@ int freerdp_client_print_command_line_help(int argc, char** argv)
 	printf("\n");
 
 	printf("Drive Redirection: /drive:home,/home/user\n");
+#if defined(WIN32)
+	printf("Smartcard Redirection: /smartcard\n");
+#else
 	printf("Smartcard Redirection: /smartcard:<device>\n");
+#endif
 	printf("Printer Redirection: /printer:<device>,<driver>\n");
 	printf("Serial Port Redirection: /serial:<device>\n");
 	printf("Parallel Port Redirection: /parallel:<device>\n");
@@ -324,6 +328,14 @@ int freerdp_client_add_device_channel(rdpSettings* settings, int count, char** p
 		if (count < 1)
 			return -1;
 
+#if defined(WIN32)
+		smartcard = (RDPDR_SMARTCARD*) malloc(sizeof(RDPDR_SMARTCARD));
+		ZeroMemory(smartcard, sizeof(RDPDR_SMARTCARD));
+
+		smartcard->Type = RDPDR_DTYP_SMARTCARD;
+
+		freerdp_device_collection_add(settings, (RDPDR_DEVICE*) smartcard);
+#else
 		smartcard = (RDPDR_SMARTCARD*) malloc(sizeof(RDPDR_SMARTCARD));
 		ZeroMemory(smartcard, sizeof(RDPDR_SMARTCARD));
 
@@ -334,6 +346,7 @@ int freerdp_client_add_device_channel(rdpSettings* settings, int count, char** p
 			smartcard->Path = _strdup(params[2]);
 
 		freerdp_device_collection_add(settings, (RDPDR_DEVICE*) smartcard);
+#endif
 		settings->DeviceRedirection = TRUE;
 
 		return 1;

@@ -734,6 +734,18 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_DynamicChannelArraySize				5057
 #define FreeRDP_DynamicChannelArray				5058
 
+typedef struct _SmartCard_Csp_Data
+{
+	wchar_t* pszCardName;
+	UINT cbCardName;
+	wchar_t* pszReaderName;
+	UINT cbReaderName;
+	wchar_t* pszContainerName;
+	UINT cbContainerName;
+	wchar_t* pszCspName;
+	UINT cbCspName;
+} SmartCard_CSP_DATA, *PSmartCard_CSP_DATA;
+
 /**
  * FreeRDP Settings Data Structure
  */
@@ -1291,6 +1303,7 @@ struct rdp_settings
 	
 	ALIGN64 BYTE* settings_modified; /* byte array marking fields that have been modified from their default value */
 	ALIGN64 UINT32 CredentialsType;
+	ALIGN64 SmartCard_CSP_DATA SmartCard_CSP_Data;
 };
 typedef struct rdp_settings rdpSettings;
 
