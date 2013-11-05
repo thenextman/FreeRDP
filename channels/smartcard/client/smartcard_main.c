@@ -344,7 +344,7 @@ int DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints)
 {
 	char* name;
 	char* path;
-	int i, length, ck;
+	int length, ck;
 	RDPDR_SMARTCARD* device;
 	SMARTCARD_DEVICE* smartcard;
 
@@ -352,7 +352,7 @@ int DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints)
 	name = device->Name;
 	path = device->Path;
 
-	DEBUG_SCARD("");
+	DEBUG_SCARD(" ");
 	/* TODO: check if server supports sc redirect (version 5.1) */
 	smartcard = (SMARTCARD_DEVICE*) malloc(sizeof(SMARTCARD_DEVICE));
 	ZeroMemory(smartcard, sizeof(SMARTCARD_DEVICE));

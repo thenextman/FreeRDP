@@ -733,17 +733,16 @@ int freerdp_client_command_line_post_filter(void* context, COMMAND_LINE_ARGUMENT
 int freerdp_parse_username(char* username, char** user, char** domain)
 {
 	char* p;
-	int length;
+
+	DEBUG_MSG("Parsing user name: %s", username);
 
 	p = strchr(username, '\\');
 
 	if (p)
 	{
-		length = p - username;
-		*domain = (char*) malloc(length + 1);
-		strncpy(*domain, username, length);
-		(*domain)[length] = '\0';
-		*user = _strdup(&p[1]);
+		*domain = strndup(username, p-username);
+		*user = _strdup(p+1);
+		DEBUG_MSG("User: %s Domain: %s", *user, *domain);
 	}
 	else
 	{
@@ -751,16 +750,15 @@ int freerdp_parse_username(char* username, char** user, char** domain)
 
 		if (p)
 		{
-			length = p - username;
-			*user = (char*) malloc(length + 1);
-			strncpy(*user, username, length);
-			(*user)[length] = '\0';
-			*domain = _strdup(&p[1]);
+			*domain = _strdup(p+1);
+			*user = strndup(username, p-username);
+			DEBUG_MSG("User: %s Domain: %s", *user, *domain);
 		}
 		else
 		{
 			*user = _strdup(username);
 			*domain = NULL;
+			DEBUG_MSG("User: %s", *user);
 		}
 	}
 
@@ -1734,7 +1732,7 @@ int freerdp_client_load_static_channel_addin(rdpChannels* channels, rdpSettings*
 	{
 		if (freerdp_channels_client_load(channels, settings, entry, data) == 0)
 		{
-			fprintf(stderr, "loading channel %s\n", name);
+			DEBUG_MSG("loading channel %s", name);
 			return 0;
 		}
 	}

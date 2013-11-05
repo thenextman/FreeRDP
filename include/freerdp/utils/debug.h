@@ -21,9 +21,10 @@
 #define FREERDP_UTILS_DEBUG_H
 
 #include <stdio.h>
+
+#if defined(WIN32) && defined(DEBUG)
 HANDLE gLogMutex;
 
-#define DEBUG_NULL(fmt, ...) do { } while (0)
 #define DEBUG_PRINT(_dbg_str, fmt, ...) \
 	if (WaitForSingleObject(gLogMutex, INFINITE) == WAIT_OBJECT_0) { \
 		do { \
@@ -34,6 +35,16 @@ HANDLE gLogMutex;
 		} while( 0 ); \
 		ReleaseMutex(gLogMutex); \
 	}
+#endif
+
+#define DEBUG_NULL(fmt, ...) do { } while (0)
+#define DEBUG_PRINT(_dbg_str, fmt, ...) \
+	do { \
+		fprintf(stderr, _dbg_str, __FUNCTION__, __FILE__, __LINE__); \
+		fprintf(stderr, fmt, ## __VA_ARGS__); \
+		fprintf(stderr, "\n"); \
+		fflush(stderr); \
+	} while( 0 );
 
 #define DEBUG_CLASS(_dbg_class, fmt, ...) DEBUG_PRINT("DBG_" #_dbg_class " %s (%s:%d): ", fmt, ## __VA_ARGS__)
 #define DEBUG_WARN(fmt, ...) DEBUG_PRINT("Warning %s (%s:%d): ", fmt, ## __VA_ARGS__)

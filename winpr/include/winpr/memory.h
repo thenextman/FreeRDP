@@ -32,6 +32,8 @@
 #define MoveMemory(Destination, Source, Length)		memmove((Destination), (Source), (Length))
 #define	 FillMemory(Destination, Length, Fill)		memset((Destination), (Fill), (Length))
 #define ZeroMemory(Destination, Length)			memset((Destination), 0, (Length))
+/* TODO create compatible secure version */
+#define SecureZeroMemory(Destination, Length)			memset((Destination), 0, (Length))
 
 #endif
 
