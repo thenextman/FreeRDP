@@ -30,6 +30,7 @@
 #include <freerdp/settings.h>
 #include <freerdp/client/channels.h>
 #include <freerdp/locale/keyboard.h>
+#include <freerdp/utils/debug.h>
 
 #include <freerdp/client/cmdline.h>
 
