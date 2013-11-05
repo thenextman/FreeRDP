@@ -38,7 +38,7 @@ void mfreerdp_client_global_init()
 
 void mfreerdp_client_global_uninit()
 {
-	freerdp_channels_global_uninit();
+
 }
 
 int mfreerdp_client_start(rdpContext* context)
@@ -63,44 +63,21 @@ int mfreerdp_client_stop(rdpContext* context)
 {
 	mfContext* mfc = (mfContext*) context;
 
-	if (context->settings->AsyncUpdate)
+	if (mfc->thread)
 	{
-		wMessageQueue* queue;
-		queue = freerdp_get_message_queue(context->instance, FREERDP_UPDATE_MESSAGE_QUEUE);
-        if (queue)
-        {
-            MessageQueue_PostQuit(queue, 0);
-        }
-	}
-	else if (context->settings->AsyncInput)
-	{
-		wMessageQueue* queue;
-		queue = freerdp_get_message_queue(context->instance, FREERDP_INPUT_MESSAGE_QUEUE);
-        if (queue)
-        {
-            MessageQueue_PostQuit(queue, 0);
-        }
-    }
-	else
-	{
-		mfc->disconnect = TRUE;
+		SetEvent(mfc->stopEvent);
+		WaitForSingleObject(mfc->thread, INFINITE);
+		CloseHandle(mfc->thread);
+		mfc->thread = NULL;
 	}
 	
-    if (mfc->thread)
-    {
-		SetEvent(mfc->stopEvent);
-        WaitForSingleObject(mfc->thread, INFINITE);
-        CloseHandle(mfc->thread);
-        mfc->thread = NULL;
-    }
-
-    if (mfc->view_ownership)
-    {
-        MRDPView* view = (MRDPView*) mfc->view;
-        [view releaseResources];
-        [view release];
-        mfc->view = nil;
-    }
+	if (mfc->view_ownership)
+	{
+		MRDPView* view = (MRDPView*) mfc->view;
+		[view releaseResources];
+		[view release];
+		mfc->view = nil;
+	}
 
 	return 0;
 }
@@ -128,7 +105,7 @@ int mfreerdp_client_new(freerdp* instance, rdpContext* context)
     settings->AsyncInput = TRUE;
 	settings->AsyncChannels = TRUE;
 	settings->AsyncTransport = TRUE;
-	settings->RedirectClipboard = TRUE;
+	//settings->RedirectClipboard = TRUE;
 
 	settings->OsMajorType = OSMAJORTYPE_MACINTOSH;
 	settings->OsMinorType = OSMINORTYPE_MACINTOSH;

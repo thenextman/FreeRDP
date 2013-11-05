@@ -144,9 +144,16 @@ static NSString *MRDPViewDidPostEmbedNotification = @"MRDPViewDidPostEmbedNotifi
     
     int status;
     mfContext* mfc;
+    rdpSettings* settings;
     
     [self createContext];
     
+	settings = context->settings;
+	settings->AsyncInput = TRUE;
+	settings->AsyncUpdate = TRUE;
+	settings->AsyncChannels = TRUE;
+	settings->AsyncTransport = TRUE;
+	
     if(arguments && [arguments count] > 0)
     {
         status = [self parseCommandLineArguments:arguments];
