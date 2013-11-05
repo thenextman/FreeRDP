@@ -40,7 +40,6 @@
 
 #include "nla.h"
 
-#include <strsafe.h>
 /**
  * TSRequest ::= SEQUENCE {
  * 	version    [0] INTEGER,
@@ -83,7 +82,9 @@
  *
  */
 
+#ifdef WIN32
 #define ALLOW_SSPI_MODULE_OVERRIDE
+#endif
 
 #ifdef WITH_DEBUG_NLA
 #define WITH_DEBUG_CREDSSP
@@ -95,6 +96,9 @@
 #else
 #define NLA_PKG_NAME NTLMSP_NAME
 #endif
+#else
+ /* non native sspi, use NTLM */
+ #define NLA_PKG_NAME NTLMSP_NAME
 #endif
 
 #if defined(WITH_DEBUG_NLA)
@@ -123,7 +127,6 @@ void credssp_buffer_free(rdpCredssp* credssp);
 SECURITY_STATUS credssp_encrypt_public_key_echo(rdpCredssp* credssp);
 SECURITY_STATUS credssp_decrypt_public_key_echo(rdpCredssp* credssp);
 SECURITY_STATUS credssp_encrypt_ts_credentials(rdpCredssp* credssp);
-SECURITY_STATUS credssp_encrypt_ts_credentials_nego(rdpCredssp* credssp);
 SECURITY_STATUS credssp_decrypt_ts_credentials(rdpCredssp* credssp);
 
 void credssp_encode_ts_credentials(rdpCredssp* credssp);
@@ -156,8 +159,6 @@ int credssp_ntlm_client_init(rdpCredssp* credssp)
 {
 	freerdp* instance;
 	rdpSettings* settings;
-	DWORD fn = 0;
-	LPTSTR* f = NULL;
 
 	settings = credssp->settings;
 	instance = (freerdp*) settings->instance;
@@ -175,24 +176,27 @@ int credssp_ntlm_client_init(rdpCredssp* credssp)
 
 	switch (settings->CredentialsType) {
 	case 1:
-		credssp->providerName = _wcsdup(NTLMSP_NAME);
+		credssp->providerName = _tcsdup(NTLMSP_NAME);
 		break;
 
 	case 2:
-		credssp->providerName = _wcsdup(NEGOSSP_NAME_W);
+		credssp->providerName = _tcsdup(NEGOSSP_NAME);
 		break;
 
 	default:
 		DEBUG_ERROR("Unhandled CredentialType: %d", settings->CredentialsType);
-		DebugBreak();
-		break;
+		return 0;
 	}
 
 	sspi_SetAuthIdentity(&(credssp->identity), settings->Username, settings->Domain, settings->Password);
 
 #ifdef WITH_DEBUG_NLA
-	DEBUG_NLA("User: %S Domain: %S Password: %S", (char*) credssp->identity.User, (char*) credssp->identity.Domain, (char*) credssp->identity.Password);
-#endif
+#ifdef UNICODE
+	DEBUG_NLA("User: %s Domain: %s Password: %s", (char*) credssp->identity.User, (char*) credssp->identity.Domain, (char*) credssp->identity.Password);
+#else
+	DEBUG_NLA("User: %s Domain: %s Password: %s", (char*) credssp->identity.User, (char*) credssp->identity.Domain, (char*) credssp->identity.Password);
+#endif // UNICODE
+#endif // WITH_DEBUG_NLA
 
 	sspi_SecBufferAlloc(&credssp->PublicKey, credssp->transport->TlsIn->PublicKeyLength);
 	CopyMemory(credssp->PublicKey.pvBuffer, credssp->transport->TlsIn->PublicKey, credssp->transport->TlsIn->PublicKeyLength);
@@ -210,7 +214,7 @@ int credssp_ntlm_client_init(rdpCredssp* credssp)
 	{
 		const int length = sizeof(TERMSRV_SPN_PREFIX) + strlen(settings->ServerHostname);
 		credssp->ServicePrincipalName = (SEC_CHAR*) malloc(length + 1);
-		snprintf(credssp->ServicePrincipleName, length, "%s%s", TERMSRV_SPN_PREFIX, settings->ServerHostname);
+		_snprintf(credssp->ServicePrincipalName, length, "%s%s", TERMSRV_SPN_PREFIX, settings->ServerHostname);
 	}
 #endif
 
@@ -290,7 +294,6 @@ int credssp_client_authenticate(rdpCredssp* credssp)
 	BOOL have_context;
 	BOOL have_input_buffer;
 	BOOL have_pub_key_auth;
-	SecPkgContext_PackageInfo pkginfo;
 
 	sspi_GlobalInit();
 
@@ -326,8 +329,8 @@ int credssp_client_authenticate(rdpCredssp* credssp)
 
 	cbMaxToken = pPackageInfo->cbMaxToken;
 
-	DEBUG_NLA("%s - SPN: %S", __FUNCTION__, credssp->ServicePrincipalName);
-	DEBUG_NLA("%s - Security Package Name: %S", __FUNCTION__, pPackageInfo->Name);
+	DEBUG_NLA("SPN: %S", (wchar_t*)credssp->ServicePrincipalName);
+	DEBUG_NLA("Security Package Name: %S", (wchar_t*)pPackageInfo->Name);
 
 	status = credssp->table->AcquireCredentialsHandle(NULL, pPackageInfo->Name,
 		SECPKG_CRED_OUTBOUND, NULL, &credssp->identity, NULL, NULL, &credentials, &expiration);
@@ -355,20 +358,19 @@ int credssp_client_authenticate(rdpCredssp* credssp)
 
 	switch (credssp->settings->CredentialsType) {
 		case 1:
-			DEBUG_NLA("%s - Setting context request flags for CredentialType 1.", __FUNCTION__);
+			DEBUG_NLA("Setting context request flags for CredentialType 1.");
 			fContextReq = ISC_REQ_CONFIDENTIALITY | ISC_REQ_EXTENDED_ERROR | ISC_REQ_MUTUAL_AUTH | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_USE_SESSION_KEY;
 			break;
 
 		case 2:
-			DEBUG_NLA("%s - Setting context request flags for CredentialType 2.", __FUNCTION__);
+			DEBUG_NLA("Setting context request flags for CredentialType 2.");
 		// Flags for Negotiate
 			fContextReq = ISC_REQ_CONFIDENTIALITY | ISC_REQ_EXTENDED_ERROR | ISC_REQ_MUTUAL_AUTH | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_USE_SESSION_KEY | ISC_REQ_REPLAY_DETECT | ISC_REQ_DELEGATE | ISC_REQ_USE_SUPPLIED_CREDS;
 			break;
 
 		default:
 			DEBUG_ERROR("Unhandled CredentialType: %d", credssp->settings->CredentialsType);
-			DebugBreak();
-			break;
+			return 0;
 	}
 
 	while (TRUE)
@@ -386,7 +388,7 @@ int credssp_client_authenticate(rdpCredssp* credssp)
 				SECURITY_NATIVE_DREP, (have_input_buffer) ? &input_buffer_desc : NULL,
 				0, &credssp->context, &output_buffer_desc, &pfContextAttr, &expiration);
 
-		DEBUG_NLA("%s: InsitializeSecurityContext: status: %#x", __FUNCTION__, status);
+		DEBUG_NLA("InsitializeSecurityContext: status: %#x", status);
 
 		if (have_input_buffer && (input_buffer.pvBuffer != NULL))
 		{
@@ -396,9 +398,9 @@ int credssp_client_authenticate(rdpCredssp* credssp)
 
 		if ((status == SEC_I_COMPLETE_AND_CONTINUE) || (status == SEC_I_COMPLETE_NEEDED) || (status == SEC_E_OK))
 		{
-			DEBUG_NLA("%s: Authentication Complete.", __FUNCTION__);
+			DEBUG_NLA("Authentication Complete.");
 			fContextReq = pfContextAttr;
-			DEBUG_NLA("%s: ISC Context Attrs returned: %#x", __FUNCTION__, fContextReq);
+			DEBUG_NLA("ISC Context Attrs returned: %#lx", fContextReq);
 			if (credssp->table->CompleteAuthToken != NULL)
 				ss = credssp->table->CompleteAuthToken(&credssp->context, &output_buffer_desc);
 
@@ -410,9 +412,15 @@ int credssp_client_authenticate(rdpCredssp* credssp)
 				return 0;
 			}
 
+			#ifdef WIN32
 			credssp->table->QueryContextAttributes(&credssp->context, SECPKG_ATTR_PACKAGE_INFO, &pkginfo);
 
-			DEBUG_NLA("%s: Context Package Name: %S", __FUNCTION__, pkginfo.PackageInfo->Name);
+			#ifdef UNICODE
+			DEBUG_NLA("Context Package Name: %S", (wchar_t*)pkginfo.PackageInfo->Name);
+			#else
+			DEBUG_NLA("Context Package Name: %s", pkginfo.PackageInfo->Name);
+			#endif
+			#endif
 
 			ss = credssp_encrypt_public_key_echo(credssp);
 			if (ss != SEC_E_OK) {
@@ -456,9 +464,9 @@ int credssp_client_authenticate(rdpCredssp* credssp)
 
 					ZeroMemory(buf, len);
 
-					x = _snprintf(buf, len, "Sending Authentication Token\n%s: negotoken\n", __FUNCTION__);
+					x = _snprintf(buf, len, "Sending Authentication Token\nnegotoken\n");
 					x += winpr_HexDumpToBuffer(buf+x, len-x, (PBYTE)credssp->negoToken.pvBuffer, credssp->negoToken.cbBuffer);
-					x += _snprintf(buf+x, len-x, "%s: pubkeyauth\n", __FUNCTION__);
+					x += _snprintf(buf+x, len-x, "pubkeyauth\n");
 					x += winpr_HexDumpToBuffer(buf+x, len-x, (PBYTE)credssp->pubKeyAuth.pvBuffer, credssp->pubKeyAuth.cbBuffer);
 
 					DEBUG_CREDSSP("%s", buf);
@@ -535,8 +543,8 @@ int credssp_client_authenticate(rdpCredssp* credssp)
 			break;
 
 		default:
-			DebugBreak();
-			break;
+			DEBUG_ERROR("Unhandled CredentialType: %d", credssp->settings->CredentialsType);
+			return -1;
 	}
 
 	if (status != SEC_E_OK)
@@ -733,7 +741,7 @@ int credssp_server_authenticate(rdpCredssp* credssp)
 				return 0;
 			}
 
-			DEBUG_CREDSSP("%s: Decrypting PublicKey from server.", __FUNCTION__);
+			DEBUG_CREDSSP("Decrypting PublicKey from server.");
 			if (credssp_decrypt_public_key_echo(credssp) != SEC_E_OK)
 			{
 				DEBUG_ERROR("Error: could not verify client's public key echo");
@@ -744,7 +752,7 @@ int credssp_server_authenticate(rdpCredssp* credssp)
 			credssp->negoToken.pvBuffer = NULL;
 			credssp->negoToken.cbBuffer = 0;
 
-			DEBUG_CREDSSP("%s: Encrypting PublicKey from server.", __FUNCTION__);
+			DEBUG_CREDSSP("Encrypting PublicKey from server.");
 			credssp_encrypt_public_key_echo(credssp);
 		}
 
@@ -913,8 +921,8 @@ SECURITY_STATUS credssp_encrypt_public_key_echo(rdpCredssp* credssp)
 	credssp->cbSignature = Buffers[0].cbBuffer;
 
 	sspi_SecBufferAlloc(&credssp->pubKeyAuth, Buffers[0].cbBuffer + Buffers[1].cbBuffer);
-	RtlCopyMemory(credssp->pubKeyAuth.pvBuffer, Buffers[0].pvBuffer, Buffers[0].cbBuffer);
-	RtlCopyMemory((BYTE*)credssp->pubKeyAuth.pvBuffer + Buffers[0].cbBuffer, Buffers[1].pvBuffer, Buffers[1].cbBuffer);
+	CopyMemory(credssp->pubKeyAuth.pvBuffer, Buffers[0].pvBuffer, Buffers[0].cbBuffer);
+	CopyMemory((BYTE*)credssp->pubKeyAuth.pvBuffer + Buffers[0].cbBuffer, Buffers[1].pvBuffer, Buffers[1].cbBuffer);
 
 	SecureZeroMemory(pTemp, cbpTemp);
 	free(pTemp);
@@ -936,7 +944,7 @@ SECURITY_STATUS credssp_decrypt_public_key_echo(rdpCredssp* credssp)
 
 	if (credssp->PublicKey.cbBuffer + credssp->cbSignature != credssp->pubKeyAuth.cbBuffer)
 	{
-		DEBUG_ERROR("unexpected pubKeyAuth buffer size: %d (%#x) bytes", (int) credssp->pubKeyAuth.cbBuffer, credssp->pubKeyAuth.cbBuffer);
+		DEBUG_ERROR("unexpected pubKeyAuth buffer size: %d (0x%ld) bytes", (int) credssp->pubKeyAuth.cbBuffer, credssp->pubKeyAuth.cbBuffer);
 		return SEC_E_INVALID_TOKEN;
 	}
 
@@ -1039,7 +1047,7 @@ int credssp_sizeof_ts_cspdata_detail(rdpCredssp* credssp)
 		length += ber_sizeof_sequence_octet_string(credssp->settings->SmartCard_CSP_Data.cbCspName);
 	}
 
-	DEBUG_CREDSSP("%s: size of TSCspDataDetail: %d (%#x)", __FUNCTION__, length, length);
+	DEBUG_CREDSSP("size of TSCspDataDetail: %d (%#x)", length, length);
 
 	return length;
 }
@@ -1049,10 +1057,10 @@ int credssp_sizeof_ts_smartcard_creds(rdpCredssp* credssp)
 	int length = 0;
 	int cspdata_size = credssp_sizeof_ts_cspdata_detail(credssp);
 
-	DEBUG_CREDSSP("%s: size of TSCspDataDetail: %d (%#x)", __FUNCTION__, cspdata_size, cspdata_size);
+	DEBUG_CREDSSP("size of TSCspDataDetail: %d (%#x)", cspdata_size, cspdata_size);
 	length += ber_sizeof_sequence_octet_string(credssp->identity.PasswordLength * 2);
 	length += ber_sizeof_sequence_octet_string(cspdata_size);
-	DEBUG_CREDSSP("%s: size of TSSmartCardCreds: %d (%#x)", __FUNCTION__, length, length);
+	DEBUG_CREDSSP("size of TSSmartCardCreds: %d (%#x)", length, length);
 
 	return length;
 }
@@ -1130,7 +1138,6 @@ int credssp_write_ts_cspdata_detail(rdpCredssp* credssp, wStream* s)
 {
 	int size = 0;
 	int innerSize = credssp_sizeof_ts_cspdata_detail(credssp);
-	void *n = s->pointer;
 
 	size += ber_write_sequence_tag(s, innerSize);
 /*
@@ -1165,7 +1172,10 @@ int credssp_write_ts_cspdata_detail(rdpCredssp* credssp, wStream* s)
 	}
 
 #if defined(DEBUG_WITH_CREDSSP)
-	SaveBufferToFile("tscspdetail.ber", (PBYTE)n, size);
+	{
+		void *n = s->pointer-size;
+		SaveBufferToFile("tscspdetail.ber", (PBYTE)n, size);
+	}
 #endif
 
 	return size;
@@ -1177,8 +1187,6 @@ int credssp_write_ts_smartcard_creds(rdpCredssp* credssp, wStream* s)
 
 	int innerSize = credssp_sizeof_ts_smartcard_creds(credssp);
 	int cspdataSize = credssp_sizeof_ts_cspdata_detail(credssp);
-
-	void *n = s->pointer;
 
 	size += ber_write_sequence_tag(s, innerSize);
 /*
@@ -1197,7 +1205,10 @@ int credssp_write_ts_smartcard_creds(rdpCredssp* credssp, wStream* s)
 	size += credssp_write_ts_cspdata_detail(credssp, s);
 
 #if defined(DEBUG_WITH_CREDSSP)
-	SaveBufferToFile("tssmartcardcreds.ber", (BYTE*)n, size);
+	{
+		void *n = s->pointer-size;
+		SaveBufferToFile("tssmartcardcreds.ber", (BYTE*)n, size);
+	}
 #endif
 
 	return size;
@@ -1219,8 +1230,8 @@ int credssp_sizeof_ts_credentials(rdpCredssp* credssp)
 			break;
 
 		default:
-			DebugBreak();
-			break;
+			DEBUG_ERROR("Unhandled CredentialType: %d", credssp->settings->CredentialsType);
+			return 0;
 	}
 
 	DEBUG_CREDSSP("credssp_sizeof_ts_credentials: size: %d %#x", size, size);
@@ -1284,7 +1295,7 @@ int credssp_write_ts_credentials(rdpCredssp* credssp, wStream* s)
 
 			/* [1] credentials (OCTET STRING) TSSmartCardCredentials */
 			credSize = credssp_sizeof_ts_smartcard_creds(credssp);
-			DEBUG_CREDSSP("%s: size of TSSmartCardCreds: %#x", __FUNCTION__, credSize);
+			DEBUG_CREDSSP("size of TSSmartCardCreds: %#x", credSize);
 
 			size += ber_write_contextual_tag(s, 1, ber_sizeof_sequence_octet_string(credSize), TRUE);
 			size += ber_write_octet_string_tag(s, ber_sizeof_sequence(credSize));
@@ -1292,8 +1303,8 @@ int credssp_write_ts_credentials(rdpCredssp* credssp, wStream* s)
 			break;
 
 		default:
-			DebugBreak();
-			break;
+			DEBUG_ERROR("Unhandled CredentialType: %d", credssp->settings->CredentialsType);
+			return 0;
 	}
 
 	return size;
@@ -1310,7 +1321,7 @@ void credssp_encode_ts_credentials(rdpCredssp* credssp)
 	int length;
 
 	length = ber_sizeof_sequence(credssp_sizeof_ts_credentials(credssp)) + 4;
-	DEBUG_CREDSSP("%s: sizeof: %d", __FUNCTION__, length);
+	DEBUG_CREDSSP("sizeof: %d", length);
 	sspi_SecBufferAlloc(&credssp->ts_credentials, length);
 
 	s = Stream_New((BYTE*)credssp->ts_credentials.pvBuffer, length);
@@ -1321,94 +1332,6 @@ void credssp_encode_ts_credentials(rdpCredssp* credssp)
 #endif
 
 	Stream_Free(s, FALSE);
-}
-
-SECURITY_STATUS credssp_encrypt_ts_credentials_nego(rdpCredssp* credssp)
-{
-	SecPkgContext_StreamSizes sizes;
-	SecPkgContext_NegotiationInfo  SecPkgNegInfo;
-	SecBuffer Buffers[4];
-	SecBufferDesc Message;
-	SECURITY_STATUS status;
-	void* pTemp = NULL;
-	int buffer_size = 0;
-	int cur_offset = 0;
-
-	status = credssp->table->QueryContextAttributesW(&credssp->context, SECPKG_ATTR_STREAM_SIZES, &sizes);
-
-	status = credssp->table->QueryContextAttributesW(&credssp->context, SECPKG_ATTR_NEGOTIATION_INFO, &SecPkgNegInfo );
-
-	DEBUG_CREDSSP("%s: CSSP: %S", __FUNCTION__, SecPkgNegInfo.PackageInfo->Name);
-
-	credssp_encode_ts_credentials(credssp);
-
-	buffer_size = credssp->ts_credentials.cbBuffer;
-
-	pTemp = malloc(buffer_size);
-
-	Buffers[0].BufferType = SECBUFFER_STREAM_HEADER;
-	Buffers[0].cbBuffer = credssp->ContextSizes.cbSecurityTrailer;
-	Buffers[0].pvBuffer = 0;
-
-	Buffers[1].BufferType = SECBUFFER_DATA;  /* TSCredentials */
-	Buffers[1].cbBuffer = buffer_size;
-	Buffers[1].pvBuffer = (BYTE*)pTemp;
-	RtlCopyMemory(Buffers[1].pvBuffer, credssp->ts_credentials.pvBuffer, credssp->ts_credentials.cbBuffer);
-
-	Buffers[2].BufferType = SECBUFFER_STREAM_TRAILER;
-	Buffers[2].cbBuffer = credssp->ContextSizes.cbSecurityTrailer;
-	Buffers[2].pvBuffer = 0;
-
-	Buffers[3].BufferType = SECBUFFER_EMPTY;
-	Buffers[3].cbBuffer = 0;
-	Buffers[3].pvBuffer = 0;
-
-#if defined(WITH_DEBUG_SCARD)
-	SaveBufferToFile("nego_credentials.ber", (BYTE*)credssp->ts_credentials.pvBuffer, credssp->ts_credentials.cbBuffer);
-#endif
-
-	Message.cBuffers = 4;
-	Message.ulVersion = SECBUFFER_VERSION;
-	Message.pBuffers = (PSecBuffer) &Buffers;
-
-	status = credssp->table->EncryptMessage(&credssp->context, SECQOP_WRAP_NO_ENCRYPT, &Message, credssp->send_seq_num++);
-
-	if (SUCCEEDED(status)) {
-		buffer_size = Buffers[0].cbBuffer + Buffers[1].cbBuffer + Buffers[2].cbBuffer + Buffers[3].cbBuffer;
-		DEBUG_CREDSSP("%s: credssp->authInfo size: %d (%#x)", __FUNCTION__, buffer_size, buffer_size);
-		sspi_SecBufferAlloc(&credssp->authInfo, buffer_size);
-
-		if (Buffers[0].cbBuffer) {
-			RtlCopyMemory(credssp->authInfo.pvBuffer, Buffers[0].pvBuffer, Buffers[0].cbBuffer);
-			cur_offset += Buffers[0].cbBuffer;
-		}
-
-		if (Buffers[1].cbBuffer) {
-			RtlCopyMemory((BYTE*)credssp->authInfo.pvBuffer+cur_offset, Buffers[1].pvBuffer, Buffers[1].cbBuffer);
-			cur_offset += Buffers[1].cbBuffer;
-		}
-
-		if (Buffers[2].cbBuffer) {
-			RtlCopyMemory((BYTE*)credssp->authInfo.pvBuffer+cur_offset, Buffers[2].pvBuffer, Buffers[2].cbBuffer);
-			cur_offset += Buffers[2].cbBuffer;
-		}
-
-		if (Buffers[3].cbBuffer) {
-			RtlCopyMemory((BYTE*)credssp->authInfo.pvBuffer+cur_offset, Buffers[3].pvBuffer, Buffers[3].cbBuffer);
-			cur_offset += Buffers[3].cbBuffer;
-		}
-	}
-	free(pTemp);
-
-#if defined(WITH_DEBUG_SCARD)
-	SaveBufferToFile("nego_authinfo-encrypted.raw", (BYTE*)credssp->authInfo.pvBuffer, credssp->authInfo.cbBuffer);
-#endif
-
-	if (status != SEC_E_OK) {
-		return status;
-	}
-
-	return SEC_E_OK;
 }
 
 SECURITY_STATUS credssp_encrypt_ts_credentials(rdpCredssp* credssp)
@@ -1424,14 +1347,14 @@ SECURITY_STATUS credssp_encrypt_ts_credentials(rdpCredssp* credssp)
 
 	token_size = credssp->ContextSizes.cbMaxToken;
 
-	DEBUG_CREDSSP("%s: token_size: %d (%#x)", __FUNCTION__, token_size, token_size);
+	DEBUG_CREDSSP("token_size: %d (%#x)", token_size, token_size);
 
 	Buffers[0].BufferType = SECBUFFER_TOKEN; /* Signature */
 	Buffers[1].BufferType = SECBUFFER_DATA; /* TSCredentials */
 
 	buffer_size = token_size + credssp->ts_credentials.cbBuffer;
 	pTemp = malloc(credssp->ContextSizes.cbMaxToken + credssp->ts_credentials.cbBuffer);
-	RtlZeroMemory(pTemp, credssp->ContextSizes.cbMaxToken + credssp->ts_credentials.cbBuffer);
+	ZeroMemory(pTemp, credssp->ContextSizes.cbMaxToken + credssp->ts_credentials.cbBuffer);
 
 	Buffers[0].cbBuffer = token_size;
 	Buffers[0].pvBuffer = pTemp;
@@ -1439,10 +1362,10 @@ SECURITY_STATUS credssp_encrypt_ts_credentials(rdpCredssp* credssp)
 	Buffers[1].cbBuffer = credssp->ts_credentials.cbBuffer;
 #if defined(INCLUDE_MESSAGE_SIZE)
 	Buffers[1].pvBuffer = (BYTE*)pTemp + Buffers[1].cbBuffer + sizeof(DWORD64);
-	RtlCopyMemory(Buffers[1].pvBuffer, credssp->ts_credentials.pvBuffer + sizeof(DWORD64), Buffers[1].cbBuffer);
+	CopyMemory(Buffers[1].pvBuffer, credssp->ts_credentials.pvBuffer + sizeof(DWORD64), Buffers[1].cbBuffer);
 #else
 	Buffers[1].pvBuffer = (BYTE*)pTemp + Buffers[1].cbBuffer;
-	RtlCopyMemory(Buffers[1].pvBuffer, credssp->ts_credentials.pvBuffer, Buffers[1].cbBuffer);
+	CopyMemory(Buffers[1].pvBuffer, credssp->ts_credentials.pvBuffer, Buffers[1].cbBuffer);
 #endif
 
 #if defined(WITH_DEBUG_SCARD)
@@ -1466,15 +1389,15 @@ SECURITY_STATUS credssp_encrypt_ts_credentials(rdpCredssp* credssp)
 
 #if defined(INCLUDE_MESSAGE_SIZE)
 	*((DWORD64 *)credssp->authInfo.pvBuffer) = Buffers[0].cbBuffer;
-	RtlCopyMemory((BYTE*)credssp->authInfo.pvBuffer+sizeof(DWORD64), Buffers[0].pvBuffer, Buffers[0].cbBuffer);
-	RtlCopyMemory((BYTE*)credssp->authInfo.pvBuffer+sizeof(DWORD64)+Buffers[0].cbBuffer, Buffers[1].pvBuffer, Buffers[1].cbBuffer);
+	CopyMemory((BYTE*)credssp->authInfo.pvBuffer+sizeof(DWORD64), Buffers[0].pvBuffer, Buffers[0].cbBuffer);
+	CopyMemory((BYTE*)credssp->authInfo.pvBuffer+sizeof(DWORD64)+Buffers[0].cbBuffer, Buffers[1].pvBuffer, Buffers[1].cbBuffer);
 #else
-	RtlCopyMemory((BYTE*)credssp->authInfo.pvBuffer, Buffers[0].pvBuffer, Buffers[0].cbBuffer);
-	RtlCopyMemory((BYTE*)credssp->authInfo.pvBuffer+Buffers[0].cbBuffer, Buffers[1].pvBuffer, Buffers[1].cbBuffer);
+	CopyMemory((BYTE*)credssp->authInfo.pvBuffer, Buffers[0].pvBuffer, Buffers[0].cbBuffer);
+	CopyMemory((BYTE*)credssp->authInfo.pvBuffer+Buffers[0].cbBuffer, Buffers[1].pvBuffer, Buffers[1].cbBuffer);
 #endif
 	free(pTemp);
 
-	DEBUG_CREDSSP("%s: Adjusted Token Size: %d (%#x)", __FUNCTION__, Buffers[0].cbBuffer, Buffers[0].cbBuffer);
+	DEBUG_CREDSSP("Adjusted Token Size: %ld (%#lx)", Buffers[0].cbBuffer, Buffers[0].cbBuffer);
 
 #if defined(WITH_DEBUG_SCARD)
 	SaveBufferToFile("authinfo-encrypted.raw", (PBYTE)credssp->authInfo.pvBuffer, credssp->authInfo.cbBuffer);
@@ -1587,17 +1510,17 @@ void credssp_send(rdpCredssp* credssp)
 	pub_key_auth_length = (credssp->pubKeyAuth.cbBuffer > 0) ? credssp_sizeof_pub_key_auth(credssp->pubKeyAuth.cbBuffer) : 0;
 	auth_info_length = (credssp->authInfo.cbBuffer > 0) ? credssp_sizeof_auth_info(credssp->authInfo.cbBuffer) : 0;
 
-	DEBUG_CREDSSP("%s: nego_tokens_length: %d %#x", __FUNCTION__, nego_tokens_length, nego_tokens_length);
-	DEBUG_CREDSSP("%s: pub_key_auth_length: %d %#x", __FUNCTION__, pub_key_auth_length, pub_key_auth_length);
-	DEBUG_CREDSSP("%s: auth_info_length: %d %#x", __FUNCTION__, auth_info_length, auth_info_length);
+	DEBUG_CREDSSP("nego_tokens_length: %d %#x", nego_tokens_length, nego_tokens_length);
+	DEBUG_CREDSSP("pub_key_auth_length: %d %#x", pub_key_auth_length, pub_key_auth_length);
+	DEBUG_CREDSSP("auth_info_length: %d %#x", auth_info_length, auth_info_length);
 
 	length = nego_tokens_length + pub_key_auth_length + auth_info_length;
 
-	DEBUG_CREDSSP("%s: length: %d %#x", __FUNCTION__, length, length);
+	DEBUG_CREDSSP("length: %d %#x", length, length);
 
 	ts_request_length = credssp_sizeof_ts_request(length);
 
-	DEBUG_CREDSSP("%s: ts_request_length: %d %#x", __FUNCTION__, ts_request_length, ts_request_length);
+	DEBUG_CREDSSP("ts_request_length: %d %#x", ts_request_length, ts_request_length);
 
 	s = Stream_New(NULL, ber_sizeof_sequence(ts_request_length));
 	sstart = s->buffer;
@@ -1646,7 +1569,7 @@ void credssp_send(rdpCredssp* credssp)
 	{
 		char t[16] = {0};
 		_snprintf(t, ARRAYSIZE(t), "tsrequest-%d.ber", save_ts_request++);
-		DEBUG_CREDSSP("%s: saving tsrequest buffer: %s", __FUNCTION__, t);
+		DEBUG_CREDSSP("saving tsrequest buffer: %s", t);
 		SaveBufferToFile(t, (BYTE*)sstart, s->length);
 	}
 #endif
@@ -1797,10 +1720,6 @@ rdpCredssp* credssp_new(freerdp* instance, rdpTransport* transport, rdpSettings*
 
 	if (credssp != NULL)
 	{
-		HKEY hKey;
-		LONG status;
-		DWORD dwType;
-		DWORD dwSize;
 
 		credssp->instance = instance;
 		credssp->settings = settings;
@@ -1815,33 +1734,40 @@ rdpCredssp* credssp_new(freerdp* instance, rdpTransport* transport, rdpSettings*
 		SecInvalidateHandle(&credssp->context);
 
 #if defined(ALLOW_SSPI_MODULE_OVERRIDE)
-		status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Server"),
-			0, KEY_READ | KEY_WOW64_64KEY, &hKey);
-
-		if (status == ERROR_SUCCESS)
 		{
-			status = RegQueryValueEx(hKey, _T("SspiModule"), NULL, &dwType, NULL, &dwSize);
+			HKEY hKey;
+			LONG status;
+			status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("Software\\FreeRDP\\Server"),
+				0, KEY_READ | KEY_WOW64_64KEY, &hKey);
 
 			if (status == ERROR_SUCCESS)
 			{
-				credssp->SspiModule = (LPTSTR) malloc(dwSize + sizeof(TCHAR));
+				DWORD dwSize;
+				DWORD dwType;
 
-				status = RegQueryValueEx(hKey, _T("SspiModule"), NULL, &dwType,
-					(BYTE*) credssp->SspiModule, &dwSize);
+				status = RegQueryValueEx(hKey, _T("SspiModule"), NULL, &dwType, NULL, &dwSize);
 
 				if (status == ERROR_SUCCESS)
 				{
-					_tprintf(_T("Using SSPI Module: %s\n"), credssp->SspiModule);
-					RegCloseKey(hKey);
+					credssp->SspiModule = (LPTSTR) malloc(dwSize + sizeof(TCHAR));
+
+					status = RegQueryValueEx(hKey, _T("SspiModule"), NULL, &dwType,
+						(BYTE*) credssp->SspiModule, &dwSize);
+
+					if (status == ERROR_SUCCESS)
+					{
+						_tprintf(_T("Using SSPI Module: %s\n"), credssp->SspiModule);
+						RegCloseKey(hKey);
+					}
 				}
 			}
 		}
 
 		if (! credssp->SspiModule) {
-			credssp->SspiModule = wcsdup(_T("secur32.dll"));
+			credssp->SspiModule = _tcsdup(_T("secur32.dll"));
 		}
 #else
-		credssp->SspiModule = wcsdup(_T("secur32.dll"));
+		credssp->SspiModule = _tcsdup(_T("secur32.dll"));
 #endif
 	}
 
