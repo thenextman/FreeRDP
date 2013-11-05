@@ -83,6 +83,10 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 # Default to release build type
 if(NOT CMAKE_BUILD_TYPE)
 	set(CMAKE_BUILD_TYPE "Release")
+else()
+	if(NOT DEFINED WITH_DEBUG)
+		set(WITH_DEBUG ON)
+	endif()
 endif()
 
 if(NOT DEFINED BUILD_SHARED_LIBS)
