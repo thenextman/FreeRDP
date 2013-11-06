@@ -30,6 +30,19 @@
 
 PVOID SecureZeroMemory(PVOID ptr, SIZE_T cnt)
 {
+#if (defined(__GNUC__) || defined(__llvm__))
+	BYTE* p = ptr;
+
+	while (cnt--)
+	{
+		*p = 0;
+		p++;
+	}
+
+	asm("" : : : "memory");
+
+	return ptr;
+#else
 	volatile BYTE* p = ptr;
 
 	while (cnt--)
@@ -39,6 +52,7 @@ PVOID SecureZeroMemory(PVOID ptr, SIZE_T cnt)
 	}
 
 	return ptr;
+#endif
 }
 
 #endif
