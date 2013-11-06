@@ -97,7 +97,9 @@ struct rdp_context
 
 	ALIGN64 wPubSub* pubSub; /* (offset 18) */
 
-	UINT64 paddingB[32 - 19]; /* 19 */
+	ALIGN64 wMessageQueue* queue; /* (offset 19) */
+
+	UINT64 paddingB[32 - 20]; /* 20 */
 
 	ALIGN64 rdpRdp* rdp; /**< (offset 32)
 					Pointer to a rdp_rdp structure used to keep the connection's parameters.

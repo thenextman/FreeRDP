@@ -29,12 +29,30 @@
 	(((_class ##_Class) << 16) | (_class ## _ ## _type))
 
 /**
+ * Client Message Queue
+ */
+
+#define FREERDP_CLIENT_MESSAGE_QUEUE				1
+
+#define Client_Base						0
+
+#define Client_Class						(Client_Base + 1)
+
+#define Client_Connect						1
+#define Client_Reconnect					2
+#define Client_Disconnect					3
+
+/* Update */
+
+#define Client_Class						(Client_Base + 1)
+
+/**
  * Update Message Queue
  */
 
-#define FREERDP_UPDATE_MESSAGE_QUEUE				1
+#define FREERDP_UPDATE_MESSAGE_QUEUE				2
 
-#define Update_Base						0
+#define Update_Base						5
 
 /* Update */
 
@@ -216,7 +234,7 @@
  * Input Message Queue
  */
 
-#define FREERDP_INPUT_MESSAGE_QUEUE				2
+#define FREERDP_INPUT_MESSAGE_QUEUE				3
 
 #define Input_Base						16
 

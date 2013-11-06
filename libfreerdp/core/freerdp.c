@@ -238,6 +238,10 @@ wMessageQueue* freerdp_get_message_queue(freerdp* instance, DWORD id)
 
 	switch (id)
 	{
+		case FREERDP_CLIENT_MESSAGE_QUEUE:
+			queue = instance->context->queue;
+			break;
+
 		case FREERDP_UPDATE_MESSAGE_QUEUE:
 			queue = instance->update->queue;
 			break;
@@ -397,6 +401,8 @@ int freerdp_context_new(freerdp* instance)
 	context->pubSub = PubSub_New(TRUE);
 	PubSub_AddEventTypes(context->pubSub, FreeRDP_Events, sizeof(FreeRDP_Events) / sizeof(wEventType));
 
+	context->queue = MessageQueue_New();
+
 	rdp = rdp_new(context);
 	instance->input = rdp->input;
 	instance->update = rdp->update;
@@ -449,6 +455,8 @@ void freerdp_context_free(freerdp* instance)
 	instance->context->graphics = NULL;
 
 	PubSub_Free(instance->context->pubSub);
+
+	MessageQueue_Free(instance->context->queue);
 
 	free(instance->context);
 	instance->context = NULL;
