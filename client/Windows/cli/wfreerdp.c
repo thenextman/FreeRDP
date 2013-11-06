@@ -43,14 +43,21 @@
 
 #include "wf_interface.h"
 
-#if defined(WIN32)
+#ifdef WIN32
 #include <conio.h>
+#endif
+
+#ifdef WITH_WINSCARD
 #pragma comment(lib,"winscard")
 #endif
 
-#if defined(LINUX)
+#ifdef HAVE__GETCH
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif
+#ifdef HAVE_TERMIOS_H
 #include <termios.h>
+#endif
 
 int _getch(unsigned char echo)
 {
@@ -89,6 +96,7 @@ int _getch(unsigned char echo)
 	return c;
 }
 #endif
+
 INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
 	int index;
@@ -101,7 +109,9 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	RDP_CLIENT_ENTRY_POINTS clientEntryPoints;
 	DWORD dwResult;
 
+#if defined(WIN32) && defined(WITH_DEBUG)
 	gLogMutex = CreateMutex(NULL, FALSE, NULL);
+#endif
 
 	ZeroMemory(&clientEntryPoints, sizeof(RDP_CLIENT_ENTRY_POINTS));
 	clientEntryPoints.Size = sizeof(RDP_CLIENT_ENTRY_POINTS);

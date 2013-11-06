@@ -526,7 +526,7 @@ finally:
 	return rc;
 }
 
-#if defined(WITH_WINSCARD)
+#ifdef WITH_WINSCARD
 static BOOL check_reader_is_forwardedW(SMARTCARD_DEVICE *scard, const WCHAR *readerName)
 {
 	BOOL rc = TRUE;
@@ -2519,7 +2519,7 @@ static void Stream_Dump(wStream *s)
 
 const char* Stream_HexDump(wStream *s)
 {
-#if defined(DEBUG) && defined(WITH_DEBUG_SCARD)
+#ifdef WITH_DEBUG_SCARD
 /* This does return a pointer to a local variable, which should be ok under debug builds */
 	size_t size = Stream_Length(s);
 	char buf[4096] = {0};

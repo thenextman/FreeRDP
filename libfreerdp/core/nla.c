@@ -412,16 +412,6 @@ int credssp_client_authenticate(rdpCredssp* credssp)
 				return 0;
 			}
 
-			#ifdef WIN32
-			credssp->table->QueryContextAttributes(&credssp->context, SECPKG_ATTR_PACKAGE_INFO, &pkginfo);
-
-			#ifdef UNICODE
-			DEBUG_NLA("Context Package Name: %S", (wchar_t*)pkginfo.PackageInfo->Name);
-			#else
-			DEBUG_NLA("Context Package Name: %s", pkginfo.PackageInfo->Name);
-			#endif
-			#endif
-
 			ss = credssp_encrypt_public_key_echo(credssp);
 			if (ss != SEC_E_OK) {
 				return 0;

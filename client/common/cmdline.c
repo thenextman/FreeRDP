@@ -741,7 +741,8 @@ int freerdp_parse_username(char* username, char** user, char** domain)
 
 	if (p)
 	{
-		*domain = strndup(username, p-username);
+		*p = 0x0;
+		*domain = _strdup(username);
 		*user = _strdup(p+1);
 		DEBUG_MSG("User: %s Domain: %s", *user, *domain);
 	}
@@ -751,8 +752,9 @@ int freerdp_parse_username(char* username, char** user, char** domain)
 
 		if (p)
 		{
+			*p = 0x0;
 			*domain = _strdup(p+1);
-			*user = strndup(username, p-username);
+			*user = _strdup(username);
 			DEBUG_MSG("User: %s Domain: %s", *user, *domain);
 		}
 		else

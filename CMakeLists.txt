@@ -37,6 +37,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/)
 include(CheckCmakeCompat)
 
 # Include cmake modules
+include(CheckFunctionExists)
 include(CheckIncludeFiles)
 include(CheckLibraryExists)
 include(CheckStructHasMember)
@@ -82,11 +83,14 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 # Default to release build type
 if(NOT CMAKE_BUILD_TYPE)
+				message(STATUS "Configuring for Release")
 	set(CMAKE_BUILD_TYPE "Release")
 else()
+				message(STATUS "Configuring for Debug")
 	if(NOT DEFINED WITH_DEBUG)
 		set(WITH_DEBUG ON)
 	endif()
+	set(DEBUG 1)
 endif()
 
 if(NOT DEFINED BUILD_SHARED_LIBS)
@@ -227,6 +231,7 @@ check_include_files(sys/modem.h HAVE_SYS_MODEM_H)
 check_include_files(sys/filio.h HAVE_SYS_FILIO_H)
 check_include_files(sys/strtio.h HAVE_SYS_STRTIO_H)
 check_include_files(sys/select.h HAVE_SYS_SELECT_H)
+check_include_files(termios.h HAVE_TERMIOS_H)
 else()
 set(HAVE_FCNTL_H 1)
 set(HAVE_UNISTD_H 1)
@@ -234,6 +239,8 @@ set(HAVE_STDINT_H 1)
 set(HAVE_INTTYPES_H 1)
 set(HAVE_SYS_FILIO_H 1)
 endif()
+
+check_function_exists(_getch HAS__GETCH)
 
 if(NOT IOS)
 check_struct_has_member("struct tm" tm_gmtoff time.h HAVE_TM_GMTOFF)
@@ -352,9 +359,11 @@ set(PCSC_FEATURE_TYPE "OPTIONAL")
 set(PCSC_FEATURE_PURPOSE "smart card")
 set(PCSC_FEATURE_DESCRIPTION "smart card device redirection")
 
-set(WINSCARD_FEATURE_TYPE "OPTIONAL")
-set(WINSCARD_FEATURE_PURPOSE "smart card")
-set(WINSCARD_FEATURE_DESCRIPTION "win32 smart card device redirection")
+if (MSVC)
+	set(WINSCARD_FEATURE_TYPE "OPTIONAL")
+	set(WINSCARD_FEATURE_PURPOSE "smart card")
+	set(WINSCARD_FEATURE_DESCRIPTION "smart card device redirection")
+endif (MSVC)
 
 set(FFMPEG_FEATURE_TYPE "RECOMMENDED")
 set(FFMPEG_FEATURE_PURPOSE "multimedia")
@@ -437,7 +446,6 @@ find_feature(Pulse ${PULSE_FEATURE_TYPE} ${PULSE_FEATURE_PURPOSE} ${PULSE_FEATUR
 
 find_feature(Cups ${CUPS_FEATURE_TYPE} ${CUPS_FEATURE_PURPOSE} ${CUPS_FEATURE_DESCRIPTION})
 find_feature(PCSC ${PCSC_FEATURE_TYPE} ${PCSC_FEATURE_PURPOSE} ${PCSC_FEATURE_DESCRIPTION})
-find_feature(WINSCARD ${WINSCARD_FEATURE_TYPE} ${WINSCARD_FEATURE_PURPOSE} ${WINSCARD_FEATURE_DESCRIPTION})
 
 find_feature(FFmpeg ${FFMPEG_FEATURE_TYPE} ${FFMPEG_FEATURE_PURPOSE} ${FFMPEG_FEATURE_DESCRIPTION})
 find_feature(Gstreamer ${GSTREAMER_FEATURE_TYPE} ${GSTREAMER_FEATURE_PURPOSE} ${GSTREAMER_FEATURE_DESCRIPTION})

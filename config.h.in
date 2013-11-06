@@ -33,7 +33,10 @@
 #cmakedefine HAVE_TIMERFD_H
 #cmakedefine HAVE_TM_GMTOFF
 #cmakedefine HAVE_AIO_H
+#cmakedefine HAVE_TERMIOS_H
 
+/* Functions */
+#cmakedefine HAS__GETCH
 
 /* Options */
 #cmakedefine WITH_DEBUG
