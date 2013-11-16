@@ -43,6 +43,8 @@ struct _RDPSND_WAVE
 
 	UINT32 wLocalTimeA;
 	UINT32 wLocalTimeB;
+	
+	BOOL AutoConfirm;
 };
 typedef struct _RDPSND_WAVE RDPSND_WAVE;
 

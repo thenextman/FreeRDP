@@ -434,6 +434,7 @@ static void rdpsnd_recv_wave_pdu(rdpsndPlugin* rdpsnd, wStream* s)
 
 	wave->data = data;
 	wave->length = size;
+	wave->AutoConfirm = TRUE;
 
 	format = &rdpsnd->ClientFormats[rdpsnd->wCurrentFormatNo];
 	wave->wAudioLength = rdpsnd_compute_audio_time_length(format, size);
@@ -463,7 +464,9 @@ static void rdpsnd_recv_wave_pdu(rdpsndPlugin* rdpsnd, wStream* s)
 		wave->wTimeStampB = rdpsnd->wTimeStamp + wave->wAudioLength + TIME_DELAY_MS;
 		wave->wLocalTimeB = wave->wLocalTimeA + wave->wAudioLength + TIME_DELAY_MS;
 	}
-	//rdpsnd->device->WaveConfirm(rdpsnd->device, wave);
+	
+	if (wave->AutoConfirm)
+		rdpsnd->device->WaveConfirm(rdpsnd->device, wave);
 }
 
 static void rdpsnd_recv_close_pdu(rdpsndPlugin* rdpsnd)
