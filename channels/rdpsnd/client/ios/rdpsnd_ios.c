@@ -40,7 +40,7 @@
 #define INPUT_BUFFER_SIZE       1048576
 #define CIRCULAR_BUFFER_SIZE    (INPUT_BUFFER_SIZE * 4)
 
-typedef struct rdpsnd_ios_plugin
+struct rdpsnd_ios_plugin
 {
 	rdpsndDevicePlugin device;
 	AudioComponentInstance audio_unit;
@@ -53,49 +53,10 @@ typedef struct rdpsnd_ios_plugin
 	int bytesPerFrame;
 	int frameCnt;
 	wQueue* waveQ;
-} rdpsndIOSPlugin;
+};
+typedef struct rdpsnd_ios_plugin rdpsndIOSPlugin;
 
-void rdpsnd_count_frames(rdpsndIOSPlugin* p)
-{
-	int targetFrames;
-	RDPSND_WAVE* wave;
-	
-	wave = Queue_Peek(p->waveQ);
-	
-	if (!wave)
-	{
-		printf("empty wave queue!\n");
-		return;
-	}
-	
-	targetFrames = wave->length / p->bytesPerFrame;
-	
-	if (p->frameCnt >= targetFrames)
-	{
-		UINT16 tB;
-		UINT16 diff;
-		
-		tB = (UINT16) GetTickCount();
-		diff = tB - wave->wLocalTimeA;
-		
-		p->frameCnt = 0;
-		
-		wave = Queue_Dequeue(p->waveQ);
-		
-		rdpsnd_send_wave_confirm_pdu(p->device.rdpsnd, wave->wTimeStampA + diff, wave->cBlockNo);
-		
-		printf("\tConfirm %02X timeStamp A:%d B:%d diff %d (qCount=%d)\n",
-		       wave->cBlockNo,
-		       wave->wTimeStampA,
-		       wave->wTimeStampA + diff,
-		       diff,
-		       Queue_Count(p->waveQ));
-		
-		free(wave);
-	}
-}
-
-static OSStatus rdpsnd_ios_monitor_cb(
+static OSStatus rdpsnd_ios_render_notify_cb(
 				      void* inRefCon,
 				      AudioUnitRenderActionFlags* ioActionFlags,
 				      const AudioTimeStamp* inTimeStamp,
@@ -108,16 +69,47 @@ static OSStatus rdpsnd_ios_monitor_cb(
 	
 	if (*ioActionFlags == kAudioUnitRenderAction_PostRender)
 	{
-		 printf("postRender Bus: %d inTimeStamp: %llu flags(%d) Frames: %d Buffers: %d\n",
-		 (unsigned int)inBusNumber,
-		 inTimeStamp->mHostTime,
-		 (unsigned int)inTimeStamp->mFlags,
-		 (unsigned int)inNumberFrames,
-		 (unsigned int)ioData->mNumberBuffers);
+		int targetFrames;
+		RDPSND_WAVE* wave;
+		AudioBuffer* audioBuffer = &ioData->mBuffers[0];
 		
-		printf("Played %d frames ", p->frameCnt);
+		printf("AudioUnitRenderNotifyCallback: inNumberFrames: %d mBuffer[%d]: mDataByteSize: %d mNumberChannels: %d\n",
+		       (unsigned int) inNumberFrames, 0,
+		       (unsigned int) audioBuffer->mDataByteSize, (unsigned int) audioBuffer->mNumberChannels);
 		
-		rdpsnd_count_frames(p);
+		wave = Queue_Peek(p->waveQ);
+		
+		if (!wave)
+		{
+			printf("empty wave queue!\n");
+			return noErr;
+		}
+		
+		targetFrames = wave->length / p->bytesPerFrame;
+		
+		if (p->frameCnt >= targetFrames)
+		{
+			UINT16 diff;
+			UINT16 wCurrentTime;
+			
+			wCurrentTime = (UINT16) GetTickCount();
+			diff = wCurrentTime - wave->wLocalTimeA;
+			
+			p->frameCnt = 0;
+			
+			wave = Queue_Dequeue(p->waveQ);
+			
+			rdpsnd_send_wave_confirm_pdu(p->device.rdpsnd, wave->wTimeStampA + diff, wave->cBlockNo);
+			
+			printf("\tConfirm %02X timeStamp A:%d B:%d diff %d (qCount=%d)\n",
+			       wave->cBlockNo,
+			       wave->wTimeStampA,
+			       wave->wTimeStampA + diff,
+			       diff,
+			       Queue_Count(p->waveQ));
+			
+			free(wave);
+		}
 	}
 	
 	return noErr;
@@ -125,12 +117,12 @@ static OSStatus rdpsnd_ios_monitor_cb(
 
 /* This callback is used to feed the audio unit buffers */
 static OSStatus rdpsnd_ios_render_cb(
-				     void *inRefCon,
+				     void* inRefCon,
 				     AudioUnitRenderActionFlags* ioActionFlags,
 				     const AudioTimeStamp* inTimeStamp,
 				     UInt32 inBusNumber,
 				     UInt32 inNumberFrames,
-				     AudioBufferList *ioData
+				     AudioBufferList* ioData
 				     )
 {
 	unsigned int i;
@@ -142,21 +134,23 @@ static OSStatus rdpsnd_ios_render_cb(
 	
 	rdpsndIOSPlugin* p = (rdpsndIOSPlugin*) inRefCon;
 	
-	//printf("Playing %d frames... ", (unsigned int)inNumberFrames);
-	
 	for (i = 0; i < ioData->mNumberBuffers; i++)
 	{
-		AudioBuffer* target_buffer = &ioData->mBuffers[i];
+		AudioBuffer* audioBuffer = &ioData->mBuffers[i];
+		
+		printf("AudioUnitRenderCallback: inNumberFrames: %d mBuffer[%d]: mDataByteSize: %d mNumberChannels: %d\n",
+		       (unsigned int) inNumberFrames, 0,
+		       (unsigned int) audioBuffer->mDataByteSize, (unsigned int) audioBuffer->mNumberChannels);
 		
 		int32_t available_bytes = 0;
 		const void* buffer = TPCircularBufferTail(&p->buffer, &available_bytes);
 		
 		if ((buffer != NULL) && (available_bytes > 0))
 		{
-			const int bytes_to_copy = MIN((int32_t) target_buffer->mDataByteSize, available_bytes);
+			const int bytes_to_copy = MIN((int32_t) audioBuffer->mDataByteSize, available_bytes);
 			
-			CopyMemory(target_buffer->mData, buffer, bytes_to_copy);
-			target_buffer->mDataByteSize = bytes_to_copy;
+			CopyMemory(audioBuffer->mData, buffer, bytes_to_copy);
+			audioBuffer->mDataByteSize = bytes_to_copy;
 			
 			TPCircularBufferConsume(&p->buffer, bytes_to_copy);
 			
@@ -166,20 +160,11 @@ static OSStatus rdpsnd_ios_render_cb(
 		{
 			*ioActionFlags = *ioActionFlags | kAudioUnitRenderAction_OutputIsSilence;
 			
-			//FIXME: force sending of any remaining items in queue
-			if (Queue_Count(p->waveQ) > 0)
-			{
-				p->frameCnt += 1000000;
-			}
-			
-			//in case we didnt get a post render callback first (observed)
-			rdpsnd_count_frames(p);
-			
-			target_buffer->mDataByteSize = 0;
+			audioBuffer->mDataByteSize = 0;
 			AudioOutputUnitStop(p->audio_unit);
 			p->is_playing = FALSE;
 			
-			printf("Buffer is empty with frameCnt:%d(underrun)\n", p->frameCnt);
+			printf("Buffer underrun!\n");
 		}
 	}
 	
@@ -188,24 +173,20 @@ static OSStatus rdpsnd_ios_render_cb(
 
 static BOOL rdpsnd_ios_format_supported(rdpsndDevicePlugin* __unused device, AUDIO_FORMAT* format)
 {
-	//printf("format 0x%X\n", format->wFormatTag);
-	
 	if (format->wFormatTag == WAVE_FORMAT_PCM)
 	{
-		return 1;
+		return TRUE;
 	}
-	
-	if (format->wFormatTag == WAVE_FORMAT_ALAW)
+	else if (format->wFormatTag == WAVE_FORMAT_ALAW)
 	{
-		return 1;
+		return TRUE;
 	}
-	
-	if (format->wFormatTag == WAVE_FORMAT_MULAW)
+	else if (format->wFormatTag == WAVE_FORMAT_MULAW)
 	{
-		return 1;
+		return TRUE;
 	}
 	
-	return 0;
+	return FALSE;
 }
 
 static void rdpsnd_ios_set_format(rdpsndDevicePlugin* __unused device, AUDIO_FORMAT* __unused format, int __unused latency)
@@ -401,11 +382,11 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 	}
 	
 	/* Render Notify Callback */
-	status = AudioUnitAddRenderNotify(p->audio_unit, rdpsnd_ios_monitor_cb, p);
+	status = AudioUnitAddRenderNotify(p->audio_unit, rdpsnd_ios_render_notify_cb, p);
 	
 	if (status != 0)
 	{
-		printf("Could not register fake callback!\n");
+		printf("Could not register render notify callback!\n");
 		AudioComponentInstanceDispose(p->audio_unit);
 		p->audio_unit = NULL;
 		return;
