@@ -65,7 +65,10 @@ ios_pre_connect(freerdp * instance)
 	settings->OrderSupport[NEG_ELLIPSE_SC_INDEX] = FALSE;
 	settings->OrderSupport[NEG_ELLIPSE_CB_INDEX] = FALSE;
 	
-	settings->AsyncUpdate = TRUE;
+	settings->AsyncUpdate = FALSE;
+	settings->AsyncTransport = FALSE;
+	settings->AsyncChannels = FALSE;
+	settings->AsyncInput = FALSE;
 	
 	settings->FrameAcknowledge = 2;
 	
@@ -108,6 +111,7 @@ static int ios_receive_channel_data(freerdp* instance, int channelId, UINT8* dat
 void ios_process_channel_event(rdpChannels* channels, freerdp* instance)
 {
 	wMessage* event = freerdp_channels_pop_event(channels);
+	
 	if (event)
 		freerdp_event_free(event);
 }
@@ -134,6 +138,30 @@ void* ios_update_thread(void* arg)
 		
 		if (!status)
 			break;
+	}
+	
+	ExitThread(0);
+	return NULL;
+}
+
+void* ios_channels_thread(void* arg)
+{
+	int status;
+	HANDLE event;
+	rdpChannels* channels;
+	freerdp* instance = (freerdp*) arg;
+	
+	channels = instance->context->channels;
+	event = freerdp_channels_get_event_handle(instance);
+	
+	while (WaitForSingleObject(event, INFINITE) == WAIT_OBJECT_0)
+	{
+		status = freerdp_channels_process_pending_messages(instance);
+		
+		if (!status)
+			break;
+		
+		ios_process_channel_event(channels, instance);
 	}
 	
 	ExitThread(0);
@@ -186,22 +214,34 @@ int ios_run_freerdp(freerdp* instance)
 			(LPTHREAD_START_ROUTINE) ios_update_thread, instance, 0, NULL);
         }
 	
+	if (settings->AsyncChannels)
+	{
+		context->ChannelsThread = CreateThread(NULL, 0,
+			(LPTHREAD_START_ROUTINE) ios_channels_thread, instance, 0, NULL);
+	}
+	
 	while (!freerdp_shall_disconnect(instance))
 	{
 		rcount = wcount = 0;
 		
 		pool = [[NSAutoreleasePool alloc] init];
 		
-		if (freerdp_get_fds(instance, rfds, &rcount, wfds, &wcount) != TRUE)
+		if (!settings->AsyncTransport)
 		{
-			NSLog(@"%s: inst->rdp_get_fds failed", __func__);
-			break;
+			if (freerdp_get_fds(instance, rfds, &rcount, wfds, &wcount) != TRUE)
+			{
+				NSLog(@"%s: inst->rdp_get_fds failed", __func__);
+				break;
+			}
 		}
 		
-		if (freerdp_channels_get_fds(channels, instance, rfds, &rcount, wfds, &wcount) != TRUE)
+		if (!settings->AsyncChannels)
 		{
-			NSLog(@"%s: freerdp_channels_get_fds failed", __func__);
-			break;
+			if (freerdp_channels_get_fds(channels, instance, rfds, &rcount, wfds, &wcount) != TRUE)
+			{
+				NSLog(@"%s: freerdp_channels_get_fds failed", __func__);
+				break;
+			}
 		}
 		
 		if (ios_events_get_fds(mfi, rfds, &rcount, wfds, &wcount) != TRUE)
@@ -230,11 +270,12 @@ int ios_run_freerdp(freerdp* instance)
 		timeout.tv_sec = 1;
 		timeout.tv_usec = 0;
 		
-		select_status = select(max_fds + 1, &rfds_set, NULL, NULL, &timeout);
+		select_status = select(max_fds + 1, &rfds_set, NULL, NULL, NULL);
 		
-		// timeout?
 		if (select_status == 0)
+		{
 			continue;
+		}
 		else if (select_status == -1)
 		{
 			/* these are not really errors */
@@ -248,11 +289,13 @@ int ios_run_freerdp(freerdp* instance)
 			}
 		}
 		
-		// Check the libfreerdp fds
-		if (freerdp_check_fds(instance) != true)
+		if (!settings->AsyncTransport)
 		{
-			NSLog(@"%s: inst->rdp_check_fds failed.", __func__);
-			break;
+			if (freerdp_check_fds(instance) != true)
+			{
+				NSLog(@"%s: inst->rdp_check_fds failed.", __func__);
+				break;
+			}
 		}
 		
 		// Check input event fds
@@ -263,13 +306,15 @@ int ios_run_freerdp(freerdp* instance)
 			break;
 		}
 		
-		// Check channel fds
-		if (freerdp_channels_check_fds(channels, instance) != TRUE)
+		if (!settings->AsyncChannels)
 		{
-			NSLog(@"%s: freerdp_chanman_check_fds failed", __func__);
-			break;
+			if (freerdp_channels_check_fds(channels, instance) != TRUE)
+			{
+				NSLog(@"%s: freerdp_channels_check_fds failed", __func__);
+				break;
+			}
+			ios_process_channel_event(channels, instance);
 		}
-		ios_process_channel_event(channels, instance);
 		
 		[pool release]; pool = nil;
 	}
@@ -287,6 +332,12 @@ int ios_run_freerdp(freerdp* instance)
 		MessageQueue_PostQuit(updateQueue, 0);
 		WaitForSingleObject(context->UpdateThread, INFINITE);
 		CloseHandle(context->UpdateThread);
+	}
+	
+	if (settings->AsyncChannels)
+	{
+		WaitForSingleObject(context->ChannelsThread, INFINITE);
+		CloseHandle(context->ChannelsThread);
 	}
 	
 	freerdp_disconnect(instance);

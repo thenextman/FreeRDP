@@ -31,6 +31,7 @@ typedef struct mf_context
 	rdpSettings* settings;
 	
 	HANDLE UpdateThread;
+	HANDLE ChannelsThread;
 } mfContext;
 
 
@@ -48,7 +49,8 @@ struct mf_info
 	CGContextRef bitmap_context;
 	
 	// Events
-	int event_pipe_producer, event_pipe_consumer;
+	int event_pipe_producer;
+	int event_pipe_consumer;
 
 	// Tracking connection state
 	volatile TSXConnectionState connection_state;
@@ -65,7 +67,7 @@ enum MF_EXIT_CODE
 
 	MF_EXIT_CONN_FAILED = 128,
 	MF_EXIT_CONN_CANCELED = 129,
-    MF_EXIT_LOGON_TIMEOUT = 130,
+	MF_EXIT_LOGON_TIMEOUT = 130,
 	
 	MF_EXIT_UNKNOWN = 255
 };
