@@ -10,11 +10,11 @@
 #   SIMULATOR - used to build for the Simulator platforms, which have an x86 arch.
 #
 # CMAKE_IOS_DEVELOPER_ROOT = automatic(default) or /path/to/platform/Developer folder
-#   By default this location is automatcially chosen based on the IOS_PLATFORM value above.
+#   By default this location is automatically chosen based on the IOS_PLATFORM value above.
 #   If set manually, it will override the default location and force the user of a particular Developer Platform
 #
 # CMAKE_IOS_SDK_ROOT = automatic(default) or /path/to/platform/Developer/SDKs/SDK folder
-#   By default this location is automatcially chosen based on the CMAKE_IOS_DEVELOPER_ROOT value.
+#   By default this location is automatically chosen based on the CMAKE_IOS_DEVELOPER_ROOT value.
 #   In this case it will always be the most up-to-date SDK found in the CMAKE_IOS_DEVELOPER_ROOT path.
 #   If set manually, this will force the use of a specific SDK version
 
@@ -101,11 +101,13 @@ set (IOS_PLATFORM ${IOS_PLATFORM} CACHE STRING "Type of iOS Platform")
 # Check the platform selection and setup for developer root
 if (${IOS_PLATFORM} STREQUAL "OS")
 	set (IOS_PLATFORM_LOCATION "iPhoneOS.platform")
+	set (IOS_PLATFORM_SDK_PREFIX "iPhoneOS")
 
 	# This causes the installers to properly locate the output libraries
 	set (CMAKE_XCODE_EFFECTIVE_PLATFORMS "-iphoneos")
 elseif (${IOS_PLATFORM} STREQUAL "SIMULATOR")
 	set (IOS_PLATFORM_LOCATION "iPhoneSimulator.platform")
+	set (IOS_PLATFORM_SDK_PREFIX "iPhoneSimulator")
 
 	# This causes the installers to properly locate the output libraries
 	set (CMAKE_XCODE_EFFECTIVE_PLATFORMS "-iphonesimulator")
@@ -132,12 +134,25 @@ if (NOT DEFINED CMAKE_IOS_SDK_ROOT)
 	if (_CMAKE_IOS_SDKS) 
 		list (SORT _CMAKE_IOS_SDKS)
 		list (REVERSE _CMAKE_IOS_SDKS)
-		list (GET _CMAKE_IOS_SDKS 0 CMAKE_IOS_SDK_ROOT)
+		if(DEFINED CMAKE_IOS_BASE_SDK)
+			foreach(_CMAKE_IOS_SDK ${_CMAKE_IOS_SDKS})
+				if("${_CMAKE_IOS_SDK}" MATCHES ".*${IOS_PLATFORM_SDK_PREFIX}${CMAKE_IOS_BASE_SDK}.sdk")
+					set(CMAKE_IOS_SDK_ROOT "${_CMAKE_IOS_SDK}")
+				endif()
+			endforeach()
+		endif()
+		if (NOT DEFINED CMAKE_IOS_SDK_ROOT)
+			list (GET _CMAKE_IOS_SDKS 0 CMAKE_IOS_SDK_ROOT)
+		endif()
 	else (_CMAKE_IOS_SDKS)
 		message (FATAL_ERROR "No iOS SDK's found in default search path ${CMAKE_IOS_DEVELOPER_ROOT}. Manually set CMAKE_IOS_SDK_ROOT or install the iOS SDK.")
 	endif (_CMAKE_IOS_SDKS)
-	message (STATUS "Toolchain using default iOS SDK: ${CMAKE_IOS_SDK_ROOT}")
+	message (STATUS "Toolchain using iOS SDK: ${CMAKE_IOS_SDK_ROOT}")
 endif (NOT DEFINED CMAKE_IOS_SDK_ROOT)
+
+string(REGEX REPLACE ".*${IOS_PLATFORM_SDK_PREFIX}([0-9]+.[0-9]+).sdk" "\\1" IOS_SDK_VERSION "${CMAKE_IOS_SDK_ROOT}")
+set(CMAKE_IOS_BASE_SDK ${IOS_SDK_VERSION} CACHE STRING "iOS Base SDK Version")
+
 set (CMAKE_IOS_SDK_ROOT ${CMAKE_IOS_SDK_ROOT} CACHE PATH "Location of the selected iOS SDK")
 
 # Set the sysroot default to the most recent SDK
