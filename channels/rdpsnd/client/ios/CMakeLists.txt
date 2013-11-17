@@ -24,9 +24,7 @@ FIND_LIBRARY(AUDIO_TOOL AudioToolbox)
 FIND_LIBRARY(CORE_FOUNDATION CoreFoundation)
 
 set(${MODULE_PREFIX}_SRCS
-	rdpsnd_ios.c
-	TPCircularBuffer.c
-	TPCircularBuffer.h)
+	rdpsnd_ios.c)
 
 include_directories(..)
 

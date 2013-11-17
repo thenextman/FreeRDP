@@ -31,6 +31,7 @@ struct _RDPSND_WAVE
 {
 	BYTE* data;
 	int length;
+	int offset;
 
 	BYTE cBlockNo;
 	UINT16 wFormatNo;
