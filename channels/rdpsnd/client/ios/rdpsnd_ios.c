@@ -50,6 +50,9 @@ struct rdpsnd_ios_plugin
 	wQueue* RenderQueue;
 	wQueue* PendingQueue;
 	
+	UINT16 wPlaybackDelay;
+	UINT32 inNumberBytes;
+	
 	CRITICAL_SECTION lock;
 	AudioComponentInstance audioUnit;
 };
@@ -66,6 +69,8 @@ static OSStatus rdpsnd_ios_render_notify_cb(
 {
 	rdpsndIOSPlugin* p = (rdpsndIOSPlugin*) inRefCon;
 	
+	return noErr;
+	
 	if (*ioActionFlags == kAudioUnitRenderAction_PostRender)
 	{
 		int inNumberBytes;
@@ -74,41 +79,38 @@ static OSStatus rdpsnd_ios_render_notify_cb(
 		
 		inNumberBytes = inNumberFrames * p->bytesPerFrame;
 		inNumberBytes /= (p->format.nChannels / audioBuffer->mNumberChannels);
+		p->inNumberBytes += inNumberBytes;
 		
-		printf("AudioUnitRenderNotifyCallback: inNumberFrames: %d inNumberBytes: %d mBuffer[%d]: mDataByteSize: %d mNumberChannels: %d format->nChannels: %d\n",
-		       (unsigned int) inNumberFrames, inNumberBytes, 0,
-		       (unsigned int) audioBuffer->mDataByteSize,
-		       (unsigned int) audioBuffer->mNumberChannels,
-		       p->format.nChannels);
+#if 1
+		printf("AudioUnitRenderNotifyCallback: inNumberFrames: %d inNumberBytes: %d mDataByteSize: %d\n",
+		       (unsigned int) inNumberFrames, inNumberBytes,
+		       (unsigned int) audioBuffer->mDataByteSize);
+#endif
 		
 		wave = Queue_Peek(p->RenderQueue);
 		
 		if (!wave)
-		{
-			printf("empty wave queue!\n");
 			return noErr;
-		}
 		
-		wave->offset += inNumberBytes;
-		
-		if (wave->offset >= wave->length)
+		if (p->inNumberBytes >= wave->length)
 		{
-			UINT16 diff;
-			UINT16 wCurrentTime;
+			UINT32 wTimeDiff;
+			UINT32 wCurrentTime;
 			
 			wave = Queue_Dequeue(p->RenderQueue);
 			
-			wCurrentTime = (UINT16) GetTickCount();
-			diff = wCurrentTime - wave->wLocalTimeA;
-			wave->wTimeStampB = wave->wTimeStampA + diff;
+			wCurrentTime = GetTickCount();
+			wave->wLocalTimeB = wCurrentTime;
+			wTimeDiff = wave->wLocalTimeB - wave->wLocalTimeA;
+			wave->wTimeStampB = wave->wTimeStampA + wTimeDiff;
 			
-			rdpsnd_send_wave_confirm_pdu(p->device.rdpsnd, wave->wTimeStampB, wave->cBlockNo);
+			p->device.WaveConfirm(&p->device, wave);
 			
-			printf("\tConfirm %02X wTimeStampA: %d wTimeStampB: %d diff: %d\n",
-			       wave->cBlockNo, wave->wTimeStampA, wave->wTimeStampB, diff);
+			printf("\tWaveConfirm wBlockNo: %d wTimeStampA: %d wTimeStampB: %d wTimeDiff: %d\n",
+			       wave->cBlockNo, wave->wTimeStampA, wave->wTimeStampB, wTimeDiff);
 			
 			BufferPool_Return(p->pool, wave->data);
-			free(wave);
+			p->inNumberBytes = 0;
 		}
 	}
 	
@@ -144,11 +146,11 @@ static OSStatus rdpsnd_ios_render_cb(
 			int mDataByteSize = audioBuffer->mDataByteSize;
 			int copyLength = (waveLength > mDataByteSize) ? mDataByteSize : waveLength;
 			
-			printf("AudioUnitRenderCallback: inNumberFrames: %d inNumberBytes: %d mBuffer[%d]: mDataByteSize: %d mNumberChannels: %d format->nChannels: %d\n",
-			       (unsigned int) inNumberFrames, copyLength, 0,
-			       (unsigned int) audioBuffer->mDataByteSize,
-			       (unsigned int) audioBuffer->mNumberChannels,
-			       p->format.nChannels);
+#if 1
+			printf("AudioUnitRenderCallback: inNumberFrames: %d inNumberBytes: %d mDataByteSize: %d\n",
+			       (unsigned int) inNumberFrames, copyLength,
+			       (unsigned int) audioBuffer->mDataByteSize);
+#endif
 			
 			CopyMemory(audioBuffer->mData, &(wave->data[wave->offset]), copyLength);
 			audioBuffer->mDataByteSize = copyLength;
@@ -157,8 +159,6 @@ static OSStatus rdpsnd_ios_render_cb(
 			if (wave->offset >= wave->length)
 			{
 				wave = Queue_Dequeue(p->PendingQueue);
-				wave->offset = 0;
-				
 				Queue_Enqueue(p->RenderQueue, wave);
 			}
 		}
@@ -168,6 +168,7 @@ static OSStatus rdpsnd_ios_render_cb(
 			
 			audioBuffer->mDataByteSize = 0;
 			AudioOutputUnitStop(p->audioUnit);
+			AudioSessionSetActive(false);
 			p->isPlaying = FALSE;
 			
 			printf("Buffer underrun!\n");
@@ -214,6 +215,7 @@ static void rdpsnd_ios_start(rdpsndDevicePlugin* device)
 	{
 		p->isPlaying = TRUE;
 		AudioOutputUnitStart(p->audioUnit);
+		AudioSessionSetActive(true);
 	}
 }
 
@@ -223,8 +225,9 @@ static void rdpsnd_ios_stop(rdpsndDevicePlugin* device)
 
 	if (p->isPlaying)
 	{
-		/* Stop the device. */
+		AudioSessionSetActive(false);
 		AudioOutputUnitStop(p->audioUnit);
+		
 		p->isPlaying = FALSE;
 		
 		Queue_Free(p->PendingQueue);
@@ -251,21 +254,26 @@ static void rdpsnd_ios_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 	
 	Queue_Enqueue(p->PendingQueue, wave);
 	
+#if 1
 	printf("Enqueue: wave [cBlockNo: %02X wLocalTimeA: %d wTimeStampA: %d frames: %d]\n",
 	       wave->cBlockNo,
 	       wave->wLocalTimeA,
 	       wave->wTimeStampA,
 	       (length / p->bytesPerFrame));
+#endif
 	
 	rdpsnd_ios_start(device);
 }
 
-static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, int __unused latency)
+static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, int latency)
 {
+	OSStatus status;
 	rdpsndIOSPlugin* p = (rdpsndIOSPlugin*) device;
 	
 	if (p->isOpen)
 		return;
+	
+	printf("rdpsnd_ios_open\n");
 	
 	/* Find the output audio unit. */
 	AudioComponentDescription desc;
@@ -281,10 +289,13 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 		return;
 	
 	/* Open the audio unit. */
-	OSStatus status = AudioComponentInstanceNew(audioComponent, &p->audioUnit);
+	status = AudioComponentInstanceNew(audioComponent, &p->audioUnit);
 	
 	if (status != 0)
+	{
+		printf("AudioComponentInstanceNew failure\n");
 		return;
+	}
 	
 	CopyMemory(&(p->format), format, sizeof(AUDIO_FORMAT));
 	
@@ -322,8 +333,7 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 	
 	rdpsnd_print_audio_format(format);
 	
-	status = AudioUnitSetProperty(
-				      p->audioUnit,
+	status = AudioUnitSetProperty(p->audioUnit,
 				      kAudioUnitProperty_StreamFormat,
 				      kAudioUnitScope_Input,
 				      0,
@@ -343,8 +353,7 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 	AURenderCallbackStruct callbackStruct = { 0 };
 	callbackStruct.inputProc = rdpsnd_ios_render_cb;
 	callbackStruct.inputProcRefCon = p;
-	status = AudioUnitSetProperty(
-				      p->audioUnit,
+	status = AudioUnitSetProperty(p->audioUnit,
 				      kAudioUnitProperty_SetRenderCallback,
 				      kAudioUnitScope_Input,
 				      0,
@@ -354,6 +363,17 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 	if (status != 0)
 	{
 		printf("Failed to set audio unit callback\n");
+		AudioComponentInstanceDispose(p->audioUnit);
+		p->audioUnit = NULL;
+		return;
+	}
+	
+	/* Render Notify Callback */
+	status = AudioUnitAddRenderNotify(p->audioUnit, rdpsnd_ios_render_notify_cb, p);
+	
+	if (status != 0)
+	{
+		printf("Could not register render notify callback!\n");
 		AudioComponentInstanceDispose(p->audioUnit);
 		p->audioUnit = NULL;
 		return;
@@ -381,6 +401,55 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 		return;
 	}
 	
+	status = AudioSessionInitialize(NULL, NULL, NULL, NULL);
+	
+	Float32 preferredBufferSize = 0.02; /* seconds */
+	status = AudioSessionSetProperty(kAudioSessionProperty_PreferredHardwareIOBufferDuration, sizeof(preferredBufferSize), &preferredBufferSize);
+	
+	if (status != 0)
+	{
+		printf("AudioSessionSetProperty failed kAudioSessionProperty_PreferredHardwareIOBufferDuration\n");
+	}
+	
+	UInt32 propertySize;
+	
+	Float64 hardwareSampleRate;
+	Float32 hardwareBufferDuration;
+	UInt32 hardwareOutputNumberChannels;
+	
+	propertySize = sizeof(hardwareSampleRate);
+	status = AudioSessionGetProperty(kAudioSessionProperty_CurrentHardwareSampleRate, &propertySize, &hardwareSampleRate);
+	
+	if (status != 0)
+	{
+		printf("AudioSessionGetProperty failed kAudioSessionProperty_CurrentHardwareIOBufferDuration\n");
+	}
+	
+	propertySize = sizeof(hardwareBufferDuration);
+	status = AudioSessionGetProperty(kAudioSessionProperty_CurrentHardwareIOBufferDuration, &propertySize, &hardwareBufferDuration);
+	
+	if (status != 0)
+	{
+		printf("AudioSessionGetProperty failed kAudioSessionProperty_CurrentHardwareIOBufferDuration\n");
+	}
+	
+	propertySize = sizeof(hardwareOutputNumberChannels);
+	status = AudioSessionGetProperty(kAudioSessionProperty_CurrentHardwareOutputNumberChannels, &propertySize, &hardwareOutputNumberChannels);
+	
+	if (status != 0)
+	{
+		printf("AudioSessionGetProperty failed kAudioSessionProperty_CurrentHardwareOutputNumberChannels\n");
+	}
+	
+	UInt32 bufferLengthInFrames = ((hardwareSampleRate * hardwareBufferDuration) + 0.5) / hardwareOutputNumberChannels;
+	
+	printf("buffer length in frames: %d\n", (int) bufferLengthInFrames);
+	printf("kAudioSessionProperty_CurrentHardwareSampleRate: %f\n", hardwareSampleRate);
+	printf("kAudioSessionProperty_CurrentHardwareIOBufferDuration: %f\n", hardwareBufferDuration);
+	printf("kAudioSessionProperty_CurrentHardwareOutputNumberChannels: %d\n", (int) hardwareOutputNumberChannels);
+	
+	status = AudioSessionSetActive(true);
+	
 	p->isOpen = TRUE;
 	
 	InitializeCriticalSectionAndSpinCount(&(p->lock), 4000);
@@ -390,17 +459,26 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 	
 	p->pool = BufferPool_New(TRUE, -1, 0);
 	
-	Float64 lat64;
-	UInt32 data_size;
+	/* audio buffer latency */
+	
+	Float64 latency64 = 0;
+	UInt32 dataSize = sizeof(Float64);
 	
 	status = AudioUnitGetProperty(p->audioUnit,
 				      kAudioUnitProperty_Latency,
 				      kAudioUnitScope_Global,
 				      0,
-				      &lat64,
-				      &data_size);
+				      &latency64,
+				      &dataSize);
 	
-	printf("audio unit latency: %.06fms\n", lat64 * 1000.0);
+	if (status != 0)
+	{
+		printf("AudioUnitGetProperty: failed to query kAudioUnitProperty_Latency\n");
+	}
+	
+	printf("audio unit latency: %.06fms\n", latency64 * 1000.0);
+	
+	p->wPlaybackDelay = (UINT16) (latency64 * 1000.0);
 }
 
 static void rdpsnd_ios_close(rdpsndDevicePlugin* device)
