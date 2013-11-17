@@ -39,16 +39,19 @@
 struct rdpsnd_ios_plugin
 {
 	rdpsndDevicePlugin device;
-	AudioComponentInstance audioUnit;
-	CRITICAL_SECTION lock;
 	
 	BOOL isOpen;
 	BOOL isPlaying;
 	int bytesPerFrame;
 	
+	wBufferPool* pool;
 	AUDIO_FORMAT format;
+	
 	wQueue* RenderQueue;
 	wQueue* PendingQueue;
+	
+	CRITICAL_SECTION lock;
+	AudioComponentInstance audioUnit;
 };
 typedef struct rdpsnd_ios_plugin rdpsndIOSPlugin;
 
@@ -104,7 +107,7 @@ static OSStatus rdpsnd_ios_render_notify_cb(
 			printf("\tConfirm %02X wTimeStampA: %d wTimeStampB: %d diff: %d\n",
 			       wave->cBlockNo, wave->wTimeStampA, wave->wTimeStampB, diff);
 			
-			free(wave->data);
+			BufferPool_Return(p->pool, wave->data);
 			free(wave);
 		}
 	}
@@ -226,6 +229,7 @@ static void rdpsnd_ios_stop(rdpsndDevicePlugin* device)
 		
 		Queue_Free(p->PendingQueue);
 		Queue_Free(p->RenderQueue);
+		BufferPool_Free(p->pool);
 	}
 }
 
@@ -242,7 +246,7 @@ static void rdpsnd_ios_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 	wave->offset = 0;
 	wave->AutoConfirm = FALSE;
 	
-	wave->data = (BYTE*) malloc(length);
+	wave->data = (BYTE*) BufferPool_Take(p->pool, length);
 	CopyMemory(wave->data, data, length);
 	
 	Queue_Enqueue(p->PendingQueue, wave);
@@ -384,6 +388,8 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 	p->RenderQueue = Queue_New(TRUE, 0, 0);
 	p->PendingQueue = Queue_New(TRUE, 0, 0);
 	
+	p->pool = BufferPool_New(TRUE, -1, 0);
+	
 	Float64 lat64;
 	UInt32 data_size;
 	
@@ -434,19 +440,22 @@ static void rdpsnd_ios_free(rdpsndDevicePlugin* device)
 int freerdp_rdpsnd_client_subsystem_entry(PFREERDP_RDPSND_DEVICE_ENTRY_POINTS pEntryPoints)
 {
 	rdpsndIOSPlugin* p = (rdpsndIOSPlugin*) malloc(sizeof(rdpsndIOSPlugin));
-	ZeroMemory(p, sizeof(rdpsndIOSPlugin));
 	
-	p->device.Open = rdpsnd_ios_open;
-	p->device.FormatSupported = rdpsnd_ios_format_supported;
-	p->device.SetFormat = rdpsnd_ios_set_format;
-	p->device.SetVolume = rdpsnd_ios_set_volume;
-	//p->device.Play = rdpsnd_ios_play;
-	p->device.Start = rdpsnd_ios_start;
-	p->device.Close = rdpsnd_ios_close;
-	p->device.Free = rdpsnd_ios_free;
-	p->device.WavePlay = rdpsnd_ios_wave_play;
+	if (p)
+	{
+		ZeroMemory(p, sizeof(rdpsndIOSPlugin));
 	
-	pEntryPoints->pRegisterRdpsndDevice(pEntryPoints->rdpsnd, (rdpsndDevicePlugin*) p);
+		p->device.Open = rdpsnd_ios_open;
+		p->device.FormatSupported = rdpsnd_ios_format_supported;
+		p->device.SetFormat = rdpsnd_ios_set_format;
+		p->device.SetVolume = rdpsnd_ios_set_volume;
+		p->device.Start = rdpsnd_ios_start;
+		p->device.Close = rdpsnd_ios_close;
+		p->device.Free = rdpsnd_ios_free;
+		p->device.WavePlay = rdpsnd_ios_wave_play;
+	
+		pEntryPoints->pRegisterRdpsndDevice(pEntryPoints->rdpsnd, (rdpsndDevicePlugin*) p);
+	}
 	
 	return 0;
 }
