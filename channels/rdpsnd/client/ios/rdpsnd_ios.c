@@ -69,8 +69,6 @@ static OSStatus rdpsnd_ios_render_notify_cb(
 {
 	rdpsndIOSPlugin* p = (rdpsndIOSPlugin*) inRefCon;
 	
-	return noErr;
-	
 	if (*ioActionFlags == kAudioUnitRenderAction_PostRender)
 	{
 		int inNumberBytes;
@@ -106,8 +104,8 @@ static OSStatus rdpsnd_ios_render_notify_cb(
 			
 			p->device.WaveConfirm(&p->device, wave);
 			
-			printf("\tWaveConfirm wBlockNo: %d wTimeStampA: %d wTimeStampB: %d wTimeDiff: %d\n",
-			       wave->cBlockNo, wave->wTimeStampA, wave->wTimeStampB, wTimeDiff);
+			printf("\tWaveConfirm wBlockNo: %d wTimeStampA: %d wTimeStampB: %d wTimeDiff: %d wAudioLength: %d\n",
+			       wave->cBlockNo, wave->wTimeStampA, wave->wTimeStampB, wTimeDiff, wave->wAudioLength);
 			
 			BufferPool_Return(p->pool, wave->data);
 			p->inNumberBytes = 0;
@@ -147,9 +145,9 @@ static OSStatus rdpsnd_ios_render_cb(
 			int copyLength = (waveLength > mDataByteSize) ? mDataByteSize : waveLength;
 			
 #if 1
-			printf("AudioUnitRenderCallback: inNumberFrames: %d inNumberBytes: %d mDataByteSize: %d\n",
+			printf("AudioUnitRenderCallback: inNumberFrames: %d inNumberBytes: %d mDataByteSize: %d wAudioLength: %d\n",
 			       (unsigned int) inNumberFrames, copyLength,
-			       (unsigned int) audioBuffer->mDataByteSize);
+			       (unsigned int) audioBuffer->mDataByteSize, wave->wAudioLength);
 #endif
 			
 			CopyMemory(audioBuffer->mData, &(wave->data[wave->offset]), copyLength);
@@ -441,7 +439,7 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 		printf("AudioSessionGetProperty failed kAudioSessionProperty_CurrentHardwareOutputNumberChannels\n");
 	}
 	
-	UInt32 bufferLengthInFrames = ((hardwareSampleRate * hardwareBufferDuration) + 0.5) / hardwareOutputNumberChannels;
+	UInt32 bufferLengthInFrames = (ceil(hardwareSampleRate * hardwareBufferDuration) / hardwareOutputNumberChannels);
 	
 	printf("buffer length in frames: %d\n", (int) bufferLengthInFrames);
 	printf("kAudioSessionProperty_CurrentHardwareSampleRate: %f\n", hardwareSampleRate);
