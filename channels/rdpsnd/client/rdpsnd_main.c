@@ -123,7 +123,9 @@ static void* rdpsnd_schedule_thread(void* arg)
 			Sleep(wTimeDiff);
 		}
 
+		printf("WaveConfirm: cBlockNo: %d wTimeDiff: %d\n", wave->cBlockNo, wave->wTimeStampB - wave->wTimeStampA);
 		rdpsnd_send_wave_confirm_pdu(rdpsnd, wave->wTimeStampB, wave->cBlockNo);
+		
 		free(wave);
 		message.wParam = NULL;
 	}
