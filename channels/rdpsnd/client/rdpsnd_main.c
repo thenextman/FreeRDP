@@ -96,9 +96,9 @@ struct rdpsnd_plugin
 static void* rdpsnd_schedule_thread(void* arg)
 {
 	wMessage message;
-	UINT16 wTimeDiff;
-	UINT16 wTimeStamp;
-	UINT16 wCurrentTime;
+	UINT32 wTimeDiff;
+	UINT32 wTimeStamp;
+	UINT32 wCurrentTime;
 	RDPSND_WAVE* wave;
 	rdpsndPlugin* rdpsnd = (rdpsndPlugin*) arg;
 
@@ -114,7 +114,7 @@ static void* rdpsnd_schedule_thread(void* arg)
 			break;
 
 		wave = (RDPSND_WAVE*) message.wParam;
-		wCurrentTime = (UINT16) GetTickCount();
+		wCurrentTime = GetTickCount();
 		wTimeStamp = wave->wLocalTimeB;
 
 		if (wCurrentTime <= wTimeStamp)
@@ -123,7 +123,9 @@ static void* rdpsnd_schedule_thread(void* arg)
 			Sleep(wTimeDiff);
 		}
 
-		printf("WaveConfirm: cBlockNo: %d wTimeDiff: %d\n", wave->cBlockNo, wave->wTimeStampB - wave->wTimeStampA);
+		printf("WaveConfirm: cBlockNo: %d wTimeDiff: %d wLocalTimeB: %d\n",
+		       wave->cBlockNo, wave->wTimeStampB - wave->wTimeStampA, wave->wLocalTimeB);
+		
 		rdpsnd_send_wave_confirm_pdu(rdpsnd, wave->wTimeStampB, wave->cBlockNo);
 		
 		free(wave);
