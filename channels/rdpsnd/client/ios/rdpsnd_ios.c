@@ -44,12 +44,12 @@ struct rdpsnd_ios_plugin
 	BOOL isOpen;
 	BOOL isPlaying;
 	BOOL isRunning;
-	BOOL isInitialized;
 	
 	AUDIO_FORMAT format;
 	UINT32 wBufferedTime;
 	
 	CRITICAL_SECTION lock;
+	BOOL isAudioSessionInitialized;
 	AudioStreamBasicDescription audioFormat;
 	
 	int audioQueueSize;
@@ -100,25 +100,34 @@ static void ios_audio_queue_property_listener_cb(void* inUserData, AudioQueueRef
 	}
 }
 
-static void ios_audio_session_initialize(rdpsndIOSPlugin* ios)
+void ios_audio_session_set_properties(rdpsndIOSPlugin* ios)
 {
 	OSStatus status;
 	UInt32 propertySize;
 	
-	if (ios->isInitialized)
-		return;
+	if (!ios->isAudioSessionInitialized)
+	{
+		status = AudioSessionInitialize(NULL, NULL, NULL, NULL);
+		
+		if (status != 0)
+		{
+			printf("AudioSessionInitialize failed\n");
+		}
+		
+		ios->isAudioSessionInitialized = TRUE;
+	}
 	
-	status = AudioSessionInitialize(NULL, NULL, NULL, NULL);
+#if 1
+	Float32 preferredHardwareIOBufferDuration = 1.0; /* seconds */
+	propertySize = sizeof(preferredHardwareIOBufferDuration);
 	
-	ios->isInitialized = TRUE;
-	
-	Float32 preferredBufferSize = 0.02; /* seconds */
-	status = AudioSessionSetProperty(kAudioSessionProperty_PreferredHardwareIOBufferDuration, sizeof(preferredBufferSize), &preferredBufferSize);
+	status = AudioSessionSetProperty(kAudioSessionProperty_PreferredHardwareIOBufferDuration, propertySize, &preferredHardwareIOBufferDuration);
 	
 	if (status != 0)
 	{
 		printf("AudioSessionSetProperty failed kAudioSessionProperty_PreferredHardwareIOBufferDuration\n");
 	}
+#endif
 	
 	Float64 hardwareSampleRate;
 	Float32 hardwareBufferDuration;
@@ -227,7 +236,7 @@ static void rdpsnd_ios_start(rdpsndDevicePlugin* device)
 			return;
 		
 		ZeroMemory(&inStartTime, sizeof(AudioTimeStamp));
-		inStartTime.mSampleTime = 400 * 1000.0;
+		inStartTime.mSampleTime = 4000 * 1000.0; /* this appears to be ignored */
 		
 		status = AudioQueueStart(ios->audioQueue, &inStartTime);
 		
@@ -277,7 +286,7 @@ static void rdpsnd_ios_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 	if (ios->isRunning)
 	{
 		AudioTimeStamp outTimeStamp;
-		Boolean outTimelineDiscontinuity;
+		Boolean outTimelineDiscontinuity = false;
 	
 		status = AudioQueueGetCurrentTime(ios->audioQueue,
 					  ios->audioTimeline,
@@ -291,6 +300,9 @@ static void rdpsnd_ios_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 		
 		Float64 mSampleTimeDiff = outActualStartTime.mSampleTime - outTimeStamp.mSampleTime;
 		wTimeDiff = ((UINT32) (mSampleTimeDiff / 1000.0)) + wave->wAudioLength;
+		
+		if (outTimelineDiscontinuity)
+			printf("Timeline discontinuity detected!\n");
 	}
 	else
 	{
@@ -298,8 +310,8 @@ static void rdpsnd_ios_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 		wTimeDiff = ios->wBufferedTime;
 	}
 	
-	printf("AudioQueueTime: wTimeDiff: %d, outActualStartTime: %f\n",
-	       wTimeDiff, outActualStartTime.mSampleTime);
+	printf("WavePlay: cBlockNo: %d wAudioLength: %d wTimeDiff: %d\n",
+	       wave->cBlockNo, wave->wAudioLength, wTimeDiff);
 	
 	wave->wTimeStampB = wave->wTimeStampA + wTimeDiff;
 	wave->wLocalTimeB = wave->wLocalTimeA + wTimeDiff;
@@ -316,6 +328,8 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 		return;
 	
 	printf("rdpsnd_ios_open\n");
+	
+	ios_audio_session_set_properties(ios);
 	
 	device->SetFormat(device, format, 200);
 	
@@ -344,8 +358,6 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 	{
 		printf("AudioQueueAddPropertyListener failure\n");
 	}
-	
-	//ios_audio_session_initialize(ios);
 	
 	UInt32 DecodeBufferSizeFrames;
 	UInt32 propertySize = sizeof(DecodeBufferSizeFrames);
