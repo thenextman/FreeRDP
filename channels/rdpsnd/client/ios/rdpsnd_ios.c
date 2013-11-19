@@ -51,7 +51,6 @@ struct rdpsnd_ios_plugin
 	UINT32 wBufferedTime;
 	
 	wQueue* waveQueue;
-	wBufferPool* pool;
 	
 	CRITICAL_SECTION lock;
 	BOOL isAudioSessionInitialized;
@@ -64,14 +63,28 @@ struct rdpsnd_ios_plugin
 };
 typedef struct rdpsnd_ios_plugin rdpsndIOSPlugin;
 
+static mach_timebase_info_data_t machTimebaseInfo = { 0, 0 };
+
+UInt64 ios_absolute_to_nanoseconds(UInt64 absoluteTime)
+{
+	UInt64 nanoTime;
+	
+	//if ((machTimebaseInfo.denom == 0) && (machTimebaseInfo.numer == 0))
+		mach_timebase_info(&machTimebaseInfo);
+	
+	nanoTime = absoluteTime * machTimebaseInfo.numer / machTimebaseInfo.denom;
+	
+	return nanoTime;
+}
+
 static int ios_audio_enqueue_buffer(rdpsndIOSPlugin* ios, RDPSND_WAVE* wave, AudioQueueBufferRef inBuffer)
 {
 	OSStatus status;
-	//UINT32 wTimeDiff;
+	UINT32 wTimeDiff;
 	
 	inBuffer->mAudioDataByteSize = wave->length;
 	CopyMemory(inBuffer->mAudioData, wave->data, wave->length);
-	inBuffer->mUserData = (void*) wave;
+	free(wave->data);
 	
 	AudioTimeStamp inStartTime;
 	AudioTimeStamp outActualStartTime;
@@ -89,15 +102,42 @@ static int ios_audio_enqueue_buffer(rdpsndIOSPlugin* ios, RDPSND_WAVE* wave, Aud
 		printf("AudioQueueEnqueueBufferWithParameters failure\n");
 	}
 	
-	int frameCount = wave->length / ios->audioFormat.mBytesPerFrame;
+	UINT32 mStartTime = (UINT32) (outActualStartTime.mSampleTime / 1000.0);
 	
-	printf("inStartTime: %f outActualStartTime: %f nFrames: %d\n",
-	       inStartTime.mSampleTime / 1000.0, outActualStartTime.mSampleTime / 1000.0,
-	       frameCount);
+	if (ios->isRunning)
+	{
+		AudioTimeStamp outTimeStamp;
+		Boolean outTimelineDiscontinuity = false;
+		
+		UInt64 absTime = mach_absolute_time();
+		
+		status = AudioQueueGetCurrentTime(ios->audioQueue,
+						  ios->audioTimeline,
+						  &outTimeStamp,
+						  &outTimelineDiscontinuity);
+		
+		if (status != 0)
+		{
+			printf("AudioQueueGetCurrentTime failure\n");
+		}
+		
+		if (outTimelineDiscontinuity)
+			printf("Timeline discontinuity detected!\n");
+		
+		UInt64 deltaHostTime = outTimeStamp.mHostTime - absTime;
+		UINT32 deltaTime = (UINT32) (ios_absolute_to_nanoseconds(deltaHostTime) / 1000.0);
+		wTimeDiff = deltaTime - mStartTime;
+		
+		wTimeDiff = deltaTime + wave->wAudioLength;
+	}
+	else
+	{
+		wTimeDiff = mStartTime + wave->wAudioLength;
+	}
 	
-	//wave->wLocalTimeB = wave->wLocalTimeA + wTimeDiff;
-	//wave->wTimeStampB = wave->wTimeStampA + wTimeDiff;
-	//ios->device.WaveConfirm(&(ios->device), wave);
+	wave->wLocalTimeB = wave->wLocalTimeA + wTimeDiff;
+	wave->wTimeStampB = wave->wTimeStampA + wTimeDiff;
+	ios->device.WaveConfirm(&(ios->device), wave);
 	
 	return 0;
 }
@@ -105,53 +145,8 @@ static int ios_audio_enqueue_buffer(rdpsndIOSPlugin* ios, RDPSND_WAVE* wave, Aud
 static void ios_audio_queue_output_cb(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer)
 {
 	HANDLE event;
-	OSStatus status;
-	UINT32 wTimeDiff;
-	UINT32 wAudioTime;
 	RDPSND_WAVE* wave;
 	rdpsndIOSPlugin* ios = (rdpsndIOSPlugin*) inUserData;
-
-	/* Old Wave */
-	
-	wave = (RDPSND_WAVE*) inBuffer->mUserData;
-	
-	if (ios->isRunning)
-	{
-		AudioTimeStamp outTimeStamp;
-		Boolean outTimelineDiscontinuity = false;
-	
-		status = AudioQueueGetCurrentTime(ios->audioQueue,
-					  ios->audioTimeline,
-					  &outTimeStamp,
-					  &outTimelineDiscontinuity);
-	
-		if (status != 0)
-		{
-			printf("AudioQueueGetCurrentTime failure\n");
-		}
-	
-		if (outTimelineDiscontinuity)
-			printf("Timeline discontinuity detected!\n");
-	
-		wAudioTime = (UINT32) ((outTimeStamp.mSampleTime / ios->audioFormat.mSampleRate) * 1000.0);
-		
-		wTimeDiff = ios->wBufferedTime - wAudioTime;
-	}
-	else
-	{
-		wAudioTime = 0;
-		wTimeDiff = ios->wBufferedTime;
-	}
-	
-	printf("wAudioTime: %d wBufferedTime: %d wTimeDiff: %d\n", wAudioTime, ios->wBufferedTime, wTimeDiff);
-	
-	wave->wLocalTimeB = wave->wLocalTimeA + wTimeDiff;
-	wave->wTimeStampB = wave->wTimeStampA + wTimeDiff;
-	ios->device.WaveConfirm(&(ios->device), wave);
-	
-	BufferPool_Return(ios->pool, wave->data);
-	
-	/* New Wave */
 	
 	event = Queue_Event(ios->waveQueue);
 	
@@ -159,13 +154,22 @@ static void ios_audio_queue_output_cb(void* inUserData, AudioQueueRef inAQ, Audi
 	
 	wave = (RDPSND_WAVE*) Queue_Dequeue(ios->waveQueue);
 	
-	if (!wave)
+	if (wave)
+	{
+		if (inBuffer->mAudioDataBytesCapacity < wave->length)
+		{
+			printf("mAudioDataBytesCapacity: %d wave->length: %d\n",
+			       (int) inBuffer->mAudioDataBytesCapacity, wave->length);
+		}
+		
+		ios_audio_enqueue_buffer(ios, wave, inBuffer);	
+	}
+	else
 	{
 		printf("Buffer underrun\n");
-		return;
+		AudioQueueStop(inAQ, TRUE);
+		ios->isPlaying = FALSE;
 	}
-	
-	ios_audio_enqueue_buffer(ios, wave, inBuffer);
 }
 
 static void ios_audio_queue_property_listener_is_running_cb(void* inUserData, AudioQueueRef inAQ, AudioQueuePropertyID inID)
@@ -378,7 +382,7 @@ static void rdpsnd_ios_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 	length = wave->length;
 	wave->AutoConfirm = FALSE;
 	
-	wave->data = (BYTE*) BufferPool_Take(ios->pool, length);
+	wave->data = (BYTE*) malloc(length);
 	CopyMemory(wave->data, data, length);
 	
 	if (!ios->audioBuffer)
@@ -529,7 +533,6 @@ int freerdp_rdpsnd_client_subsystem_entry(PFREERDP_RDPSND_DEVICE_ENTRY_POINTS pE
 		ios->device.WavePlay = rdpsnd_ios_wave_play;
 	
 		ios->waveQueue = Queue_New(TRUE, 0, 0);
-		ios->pool = BufferPool_New(TRUE, -1, 0);
 		
 		InitializeCriticalSectionAndSpinCount(&(ios->lock), 4000);
 		
