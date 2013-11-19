@@ -70,7 +70,7 @@ ios_pre_connect(freerdp * instance)
 	settings->AsyncChannels = FALSE;
 	settings->AsyncInput = FALSE;
 	
-	settings->FrameAcknowledge = 2;
+	settings->FrameAcknowledge = 10;
 	
 	char* args[] = { "rdpsnd", "sys:ios" };
         

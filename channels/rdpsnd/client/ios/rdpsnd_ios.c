@@ -46,10 +46,13 @@ struct rdpsnd_ios_plugin
 	BOOL isOpen;
 	BOOL isPlaying;
 	BOOL isRunning;
+	BOOL isBuffering;
 	
+	UINT32 latency;
 	UINT32 cBlockNo;
 	AUDIO_FORMAT format;
 	UINT32 wBufferedTime;
+	UINT32 wBufferingStartTime;
 	
 	wQueue* waveQueue;
 	
@@ -339,10 +342,11 @@ static BOOL rdpsnd_ios_format_supported(rdpsndDevicePlugin* __unused device, AUD
 	return FALSE;
 }
 
-static void rdpsnd_ios_set_format(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, int __unused latency)
+static void rdpsnd_ios_set_format(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, int latency)
 {
 	rdpsndIOSPlugin* ios = (rdpsndIOSPlugin*) device;
 	
+	ios->latency = (UINT32) latency;
 	CopyMemory(&(ios->format), format, sizeof(AUDIO_FORMAT));
 	
 	switch (format->wFormatTag)
@@ -390,14 +394,7 @@ static void rdpsnd_ios_start(rdpsndDevicePlugin* device)
 		if (!ios->audioQueue)
 			return;
 		
-		AudioTimeStamp inStartTime;
-		ZeroMemory(&inStartTime, sizeof(AudioTimeStamp));
-		
-		inStartTime.mSampleTime = 400.0 * 1000.0; /* 400ms */
-		inStartTime.mHostTime = mach_absolute_time();
-		inStartTime.mHostTime += 1000.0 * 100.0;
-		
-		status = AudioQueueStart(ios->audioQueue, &inStartTime);
+		status = AudioQueueStart(ios->audioQueue, NULL);
 		
 		if (status != 0)
 		{
@@ -421,16 +418,31 @@ static void rdpsnd_ios_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 	wave->data = (BYTE*) malloc(length);
 	CopyMemory(wave->data, data, length);
 	
-	if (!ios->isPlaying)
-	{
-		ios_audio_enqueue_buffer(ios, wave, ios->audioBuffer);
-	}
-	else
-	{
-		Queue_Enqueue(ios->waveQueue, wave);
-	}
+	Queue_Enqueue(ios->waveQueue, wave);
 	
-	rdpsnd_ios_start(device);
+	if (ios->isBuffering)
+	{
+		UINT32 wTimeDiff;
+		UINT32 wCurrentTime;
+		
+		if (!ios->wBufferingStartTime)
+			ios->wBufferingStartTime = GetTickCount();
+	
+		wCurrentTime = GetTickCount();
+		wTimeDiff = wCurrentTime - ios->wBufferingStartTime;
+		
+		if (wTimeDiff > ios->latency)
+		{
+			wave = Queue_Dequeue(ios->waveQueue);
+		
+			if (wave)
+			{
+				ios_audio_enqueue_buffer(ios, wave, ios->audioBuffer);
+				rdpsnd_ios_start(device);
+				ios->isBuffering = FALSE;
+			}
+		}
+	}
 }
 
 static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, int latency)
@@ -444,10 +456,12 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 	printf("rdpsnd_ios_open\n");
 	
 	ios->cBlockNo = 0;
+	ios->isBuffering = TRUE;
+	ios->wBufferingStartTime = 0;
 	
 	ios_audio_session_set_properties(ios);
 	
-	device->SetFormat(device, format, 200);
+	device->SetFormat(device, format, 0);
 	
 	status = AudioQueueNewOutput(&(ios->audioFormat),
 				 ios_audio_queue_output_cb, ios,
@@ -506,7 +520,7 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 	{
 		printf("AudioQueueAllocateBuffer failed\n");
 	}
-
+	
 	ios->isOpen = TRUE;
 }
 
