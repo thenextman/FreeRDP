@@ -72,9 +72,9 @@ ios_pre_connect(freerdp * instance)
 	
 	settings->FrameAcknowledge = 10;
 	
-	char* args[] = { "rdpsnd", "sys:ios" };
+	char* args[] = { "rdpsnd", "sys:ios", "quality:dynamic" };
         
-        freerdp_client_add_static_channel(instance->settings, 2, args);
+        freerdp_client_add_static_channel(instance->settings, 3, args);
         
         freerdp_client_load_addins(instance->context->channels, instance->settings);
 	
