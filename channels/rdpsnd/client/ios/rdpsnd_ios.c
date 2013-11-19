@@ -47,6 +47,7 @@ struct rdpsnd_ios_plugin
 	BOOL isPlaying;
 	BOOL isRunning;
 	
+	UINT32 cBlockNo;
 	AUDIO_FORMAT format;
 	UINT32 wBufferedTime;
 	
@@ -69,7 +70,7 @@ UInt64 ios_absolute_to_nanoseconds(UInt64 absoluteTime)
 {
 	UInt64 nanoTime;
 	
-	//if ((machTimebaseInfo.denom == 0) && (machTimebaseInfo.numer == 0))
+	if ((machTimebaseInfo.denom == 0) && (machTimebaseInfo.numer == 0))
 		mach_timebase_info(&machTimebaseInfo);
 	
 	nanoTime = absoluteTime * machTimebaseInfo.numer / machTimebaseInfo.denom;
@@ -137,20 +138,29 @@ static int ios_audio_enqueue_buffer(rdpsndIOSPlugin* ios, RDPSND_WAVE* wave, Aud
 	
 	wave->wLocalTimeB = wave->wLocalTimeA + wTimeDiff;
 	wave->wTimeStampB = wave->wTimeStampA + wTimeDiff;
-	ios->device.WaveConfirm(&(ios->device), wave);
+	
+	if (ios->cBlockNo == wave->cBlockNo)
+	{
+		ios->device.WaveConfirm(&(ios->device), wave);
+		ios->cBlockNo = (ios->cBlockNo + 1) % 256;
+	}
+	else
+	{
+		printf("warning: out of order cBlockNo: %d, expected %d\n", wave->cBlockNo, ios->cBlockNo);
+	}
 	
 	return 0;
 }
 
 static void ios_audio_queue_output_cb(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer)
 {
-	HANDLE event;
+	//HANDLE event;
 	RDPSND_WAVE* wave;
 	rdpsndIOSPlugin* ios = (rdpsndIOSPlugin*) inUserData;
 	
-	event = Queue_Event(ios->waveQueue);
+	//event = Queue_Event(ios->waveQueue);
 	
-	WaitForSingleObject(event, 400);
+	//WaitForSingleObject(event, 400);
 	
 	wave = (RDPSND_WAVE*) Queue_Dequeue(ios->waveQueue);
 	
@@ -158,17 +168,39 @@ static void ios_audio_queue_output_cb(void* inUserData, AudioQueueRef inAQ, Audi
 	{
 		if (inBuffer->mAudioDataBytesCapacity < wave->length)
 		{
-			printf("mAudioDataBytesCapacity: %d wave->length: %d\n",
-			       (int) inBuffer->mAudioDataBytesCapacity, wave->length);
+			OSStatus status;
+			
+			status = AudioQueueAllocateBuffer(ios->audioQueue, wave->length, &(ios->audioBuffer));
+			
+			if (status != 0)
+			{
+				printf("AudioQueueAllocateBuffer failed\n");
+			}
+			
+			inBuffer = ios->audioBuffer;
 		}
 		
 		ios_audio_enqueue_buffer(ios, wave, inBuffer);	
 	}
 	else
 	{
+		OSStatus status;
+	
 		printf("Buffer underrun\n");
-		AudioQueueStop(inAQ, TRUE);
-		ios->isPlaying = FALSE;
+		
+		inBuffer->mAudioDataByteSize = inBuffer->mAudioDataBytesCapacity;
+		ZeroMemory(inBuffer->mAudioData, inBuffer->mAudioDataBytesCapacity);
+		
+		status = AudioQueueEnqueueBufferWithParameters(ios->audioQueue, inBuffer, 0, NULL,
+							       0, 0, 0, NULL, NULL, NULL);
+		
+		if (status != 0)
+		{
+			printf("AudioQueueEnqueueBufferWithParameters failure\n");
+		}
+		
+		//AudioQueueStop(inAQ, TRUE);
+		//ios->isPlaying = FALSE;
 	}
 }
 
