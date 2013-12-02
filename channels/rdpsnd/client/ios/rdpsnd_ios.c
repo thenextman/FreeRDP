@@ -39,6 +39,11 @@
 
 #include "rdpsnd_main.h"
 
+#define IOS_AUDIO_NUM_BUFFERS	4
+#define IOS_AUDIO_BUFFER_SIZE	32768
+
+#define IOS_AUDIO_MAGIC_TIMESTAMPS	1
+
 struct rdpsnd_ios_plugin
 {
 	rdpsndDevicePlugin device;
@@ -46,15 +51,14 @@ struct rdpsnd_ios_plugin
 	BOOL isOpen;
 	BOOL isPlaying;
 	BOOL isRunning;
-	BOOL isBuffering;
 	
 	UINT32 latency;
 	UINT32 cBlockNo;
 	AUDIO_FORMAT format;
 	UINT32 wBufferedTime;
-	UINT32 wBufferingStartTime;
 	
 	wQueue* waveQueue;
+	wQueue* audioBufferQueue;
 	
 	CRITICAL_SECTION lock;
 	BOOL isAudioSessionInitialized;
@@ -62,8 +66,8 @@ struct rdpsnd_ios_plugin
 	
 	int audioQueueSize;
 	AudioQueueRef audioQueue;
-	AudioQueueBufferRef audioBuffer;
 	AudioQueueTimelineRef audioTimeline;
+	AudioQueueBufferRef audioBuffers[IOS_AUDIO_NUM_BUFFERS];
 };
 typedef struct rdpsnd_ios_plugin rdpsndIOSPlugin;
 
@@ -139,11 +143,17 @@ static int ios_audio_enqueue_buffer(rdpsndIOSPlugin* ios, RDPSND_WAVE* wave, Aud
 		wTimeDiff = mStartTime + wave->wAudioLength;
 	}
 	
+#ifdef IOS_AUDIO_MAGIC_TIMESTAMPS
+	wave->wTimeStampB = wave->wTimeStampA + wave->wAudioLength + 65;
+	wave->wLocalTimeB = wave->wLocalTimeA + wave->wAudioLength + 65;
+#else
 	wave->wLocalTimeB = wave->wLocalTimeA + wTimeDiff;
 	wave->wTimeStampB = wave->wTimeStampA + wTimeDiff;
+#endif
 	
 	if (ios->cBlockNo == wave->cBlockNo)
 	{
+		fprintf(stderr, "wTimeDiff: %d wAudioLength: %d\n", wTimeDiff, wave->wAudioLength);
 		ios->device.WaveConfirm(&(ios->device), wave);
 		ios->cBlockNo = (ios->cBlockNo + 1) % 256;
 	}
@@ -166,21 +176,12 @@ static void ios_audio_queue_output_cb(void* inUserData, AudioQueueRef inAQ, Audi
 	{
 		return;
 	}
-		
+	
 	if (wave)
 	{
 		if (inBuffer->mAudioDataBytesCapacity < wave->length)
 		{
-			OSStatus status;
-			
-			status = AudioQueueAllocateBuffer(ios->audioQueue, wave->length, &(ios->audioBuffer));
-			
-			if (status != 0)
-			{
-				printf("AudioQueueAllocateBuffer failed\n");
-			}
-			
-			inBuffer = ios->audioBuffer;
+			fprintf(stderr, "ios_audio_queue_output_cb: error: audio queue buffer capacity exceeded\n");
 		}
 		
 		ios_audio_enqueue_buffer(ios, wave, inBuffer);	
@@ -338,6 +339,10 @@ static BOOL rdpsnd_ios_format_supported(rdpsndDevicePlugin* __unused device, AUD
 	{
 		return TRUE;
 	}
+	else if (format->wFormatTag == WAVE_FORMAT_GSM610)
+	{
+		return FALSE;
+	}
 	
 	return FALSE;
 }
@@ -361,6 +366,10 @@ static void rdpsnd_ios_set_format(rdpsndDevicePlugin* device, AUDIO_FORMAT* form
 			
 		case WAVE_FORMAT_PCM:
 			ios->audioFormat.mFormatID = kAudioFormatLinearPCM;
+			break;
+			
+		case WAVE_FORMAT_GSM610:
+			ios->audioFormat.mFormatID = kAudioFormatMicrosoftGSM;
 			break;
 			
 		default:
@@ -407,46 +416,33 @@ static void rdpsnd_ios_start(rdpsndDevicePlugin* device)
 
 static void rdpsnd_ios_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 {
-	int length;
 	BYTE* data;
+	AudioQueueBufferRef audioBuffer;
 	rdpsndIOSPlugin* ios = (rdpsndIOSPlugin*) device;
 	
-	data = wave->data;
-	length = wave->length;
 	wave->AutoConfirm = FALSE;
 	
-	wave->data = (BYTE*) malloc(length);
-	CopyMemory(wave->data, data, length);
+	data = wave->data;
+	wave->data = (BYTE*) malloc(wave->length);
+	CopyMemory(wave->data, data, wave->length);
 	
-	Queue_Enqueue(ios->waveQueue, wave);
+	audioBuffer = Queue_Dequeue(ios->audioBufferQueue);
 	
-	if (ios->isBuffering)
+	if (audioBuffer)
 	{
-		UINT32 wTimeDiff;
-		UINT32 wCurrentTime;
-		
-		if (!ios->wBufferingStartTime)
-			ios->wBufferingStartTime = GetTickCount();
-	
-		wCurrentTime = GetTickCount();
-		wTimeDiff = wCurrentTime - ios->wBufferingStartTime;
-		
-		if (wTimeDiff > ios->latency)
-		{
-			wave = Queue_Dequeue(ios->waveQueue);
-		
-			if (wave)
-			{
-				ios_audio_enqueue_buffer(ios, wave, ios->audioBuffer);
-				rdpsnd_ios_start(device);
-				ios->isBuffering = FALSE;
-			}
-		}
+		ios_audio_enqueue_buffer(ios, wave, audioBuffer);
 	}
+	else
+	{
+		Queue_Enqueue(ios->waveQueue, wave);
+	}
+	
+	rdpsnd_ios_start(device);
 }
 
 static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, int latency)
 {
+	int index;
 	OSStatus status;
 	rdpsndIOSPlugin* ios = (rdpsndIOSPlugin*) device;
 	
@@ -456,8 +452,6 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 	printf("rdpsnd_ios_open\n");
 	
 	ios->cBlockNo = 0;
-	ios->isBuffering = TRUE;
-	ios->wBufferingStartTime = 0;
 	
 	ios_audio_session_set_properties(ios);
 	
@@ -514,18 +508,30 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 	
 	printf("kAudioQueueProperty_DecodeBufferSizeFrames: %d\n", (int) DecodeBufferSizeFrames);
 	
-	status = AudioQueueAllocateBuffer(ios->audioQueue, 8192, &(ios->audioBuffer));
+	ios->audioBufferQueue = Queue_New(TRUE, 0, 0);
 	
-	if (status != 0)
+	for (index = 0; index < IOS_AUDIO_NUM_BUFFERS; index++)
 	{
-		printf("AudioQueueAllocateBuffer failed\n");
+		status = AudioQueueAllocateBuffer(ios->audioQueue, IOS_AUDIO_BUFFER_SIZE, &(ios->audioBuffers[index]));
+	
+		if (status != 0)
+		{
+			printf("AudioQueueAllocateBuffer failed\n");
+		}
+		else
+		{
+			Queue_Enqueue(ios->audioBufferQueue, ios->audioBuffers[index]);
+		}
 	}
+	
+	ios->audioQueueSize = 0;
 	
 	ios->isOpen = TRUE;
 }
 
 static void rdpsnd_ios_close(rdpsndDevicePlugin* device)
 {
+	int index;
 	rdpsndIOSPlugin* ios = (rdpsndIOSPlugin*) device;
 	
 	printf("rdpsnd_ios_close\n");
@@ -543,6 +549,13 @@ static void rdpsnd_ios_close(rdpsndDevicePlugin* device)
 		
 		AudioQueueRemovePropertyListener(ios->audioQueue, kAudioQueueProperty_ConverterError,
 						 ios_audio_queue_property_listener_converter_error_cb, ios);
+		
+		for (index = 0; index < IOS_AUDIO_NUM_BUFFERS; index++)
+		{
+			AudioQueueFreeBuffer(ios->audioQueue, ios->audioBuffers[index]);
+		}
+		
+		Queue_Free(ios->audioBufferQueue);
 		
 		AudioQueueDispose(ios->audioQueue, true);
 
@@ -585,6 +598,7 @@ int freerdp_rdpsnd_client_subsystem_entry(PFREERDP_RDPSND_DEVICE_ENTRY_POINTS pE
 		ios->device.Free = rdpsnd_ios_free;
 		ios->device.WavePlay = rdpsnd_ios_wave_play;
 	
+		ios->latency = 65;
 		ios->waveQueue = Queue_New(TRUE, 0, 0);
 		
 		InitializeCriticalSectionAndSpinCount(&(ios->lock), 4000);

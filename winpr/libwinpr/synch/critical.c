@@ -66,7 +66,11 @@ BOOL InitializeCriticalSectionEx(LPCRITICAL_SECTION lpCriticalSection, DWORD dwS
 
 	lpCriticalSection->LockSemaphore = (winpr_sem_t*) malloc(sizeof(winpr_sem_t));
 #if defined(__APPLE__)
-	semaphore_create(mach_task_self(), lpCriticalSection->LockSemaphore, SYNC_POLICY_FIFO, 0);
+	if (semaphore_create(mach_task_self(), lpCriticalSection->LockSemaphore, SYNC_POLICY_FIFO, 0) != KERN_SUCCESS)
+	{
+		fprintf(stderr, "InitializeCriticalSectionEx: failed to create semaphore\n");
+		return FALSE;
+	}
 #else
 	sem_init(lpCriticalSection->LockSemaphore, 0, 0);
 #endif
