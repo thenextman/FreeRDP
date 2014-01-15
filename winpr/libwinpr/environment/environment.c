@@ -3,8 +3,8 @@
  * Process Environment Functions
  *
  * Copyright 2012 Marc-Andre Moreau <marcandre.moreau@gmail.com>
- * Copyright 2013 Thinstuff Technologies GmbH
- * Copyright 2013 DI (FH) Martin Haimberger <martin.haimberger@thinstuff.at>
+ * Copyright 2013 Thincast Technologies GmbH
+ * Copyright 2013 DI (FH) Martin Haimberger <martin.haimberger@thincast.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,9 +31,17 @@
 #define strnicmp strncasecmp
 
 #include <winpr/crt.h>
+#include <winpr/platform.h>
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif
+
+#if defined(__IOS__)
+
+#elif defined(__MACOSX__)
+#include <crt_externs.h>
+#define environ (*_NSGetEnviron())
 #endif
 
 DWORD GetCurrentDirectoryA(DWORD nBufferLength, LPSTR lpBuffer)

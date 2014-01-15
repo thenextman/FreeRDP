@@ -2,7 +2,7 @@
 # Android Client
 #
 # Copyright 2012 Marc-Andre Moreau <marcandre.moreau@gmail.com>
-# Copyright 2013 Bernhard Miklautz <bmiklautz@thinstuff.at>
+# Copyright 2013 Bernhard Miklautz <bernhard.miklautz@thincast.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,6 +26,14 @@ CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/build.xml.cmake
 	${CMAKE_CURRENT_BINARY_DIR}/build.xml @ONLY)
 CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/project.properties.cmake
 	${CMAKE_CURRENT_BINARY_DIR}/project.properties @ONLY)
+
+# The following is required if building android out of tree
+if (${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_BINARY_DIR})
+set (AFREERDP_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
+else()
+set (AFREERDP_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src:${CMAKE_CURRENT_SOURCE_DIR}/../FreeRDPCore/src")
+endif()
+
 CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/ant.properties.cmake
 	${CMAKE_CURRENT_BINARY_DIR}/ant.properties @ONLY)
 

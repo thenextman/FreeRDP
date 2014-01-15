@@ -55,7 +55,7 @@ include(CMakePackageConfigHelpers)
 
 # Soname versioning
 set(FREERDP_VERSION_MAJOR "1")
-set(FREERDP_VERSION_MINOR "1")
+set(FREERDP_VERSION_MINOR "2")
 set(FREERDP_VERSION_REVISION "0")
 set(FREERDP_VERSION_SUFFIX "beta1")
 set(FREERDP_API_VERSION "${FREERDP_VERSION_MAJOR}.${FREERDP_VERSION_MINOR}")
@@ -68,11 +68,11 @@ endif()
 
 # Allow to search the host machine for git
 if(ANDROID OR IOS)
-	SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER, BOTH)
+	SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM BOTH)
 endif(ANDROID OR IOS)
 include(GetGitRevisionDescription)
 if(ANDROID OR IOS)
-	SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER, ONLY)
+	SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY)
 endif(ANDROID OR IOS)
 
 git_describe(GIT_REVISION --match "[0-9]*" --abbrev=4 --tags --always)
@@ -144,6 +144,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 	CHECK_C_COMPILER_FLAG(-Wno-deprecated-declarations Wno-deprecated-declarations)
 	if(Wno-deprecated-declarations)
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-deprecated-declarations")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
 	endif()
 	if(NOT EXPORT_ALL_SYMBOLS)
 		message(STATUS "GCC default symbol visibility: hidden")
@@ -176,6 +177,7 @@ if("${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
 	CHECK_C_COMPILER_FLAG(-Wno-deprecated-declarations Wno-deprecated-declarations)
 	if(Wno-deprecated-declarations)
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-deprecated-declarations")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
 	endif()
 endif()
 
@@ -301,8 +303,9 @@ endif()
 	set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/client/Android/FreeRDPCore/jni/${ANDROID_ABI})
 	CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/scripts/regenerate_jni_headers.sh.cmake
 		${CMAKE_BINARY_DIR}/scripts/regenerate_jni_headers.sh @ONLY)
-	CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/scripts/gprof_generate.sh.cmake
-		${CMAKE_BINARY_DIR}/scripts/gprof_generate.sh @ONLY)
+	if (WITH_GPROF)
+		CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/scripts/gprof_generate.sh.cmake ${CMAKE_BINARY_DIR}/scripts/gprof_generate.sh @ONLY)
+	endif(WITH_GPROF)
 
 endif()
 
@@ -381,6 +384,10 @@ set(JPEG_FEATURE_TYPE "OPTIONAL")
 set(JPEG_FEATURE_PURPOSE "codec")
 set(JPEG_FEATURE_DESCRIPTION "use JPEG library")
 
+set(GSM_FEATURE_TYPE "OPTIONAL")
+set(GSM_FEATURE_PURPOSE "codec")
+set(GSM_FEATURE_DESCRIPTION "GSM audio codec library")
+
 if(WIN32)
 	set(X11_FEATURE_TYPE "DISABLED")
 	set(ZLIB_FEATURE_TYPE "DISABLED")
@@ -445,6 +452,7 @@ find_feature(FFmpeg ${FFMPEG_FEATURE_TYPE} ${FFMPEG_FEATURE_PURPOSE} ${FFMPEG_FE
 find_feature(Gstreamer ${GSTREAMER_FEATURE_TYPE} ${GSTREAMER_FEATURE_PURPOSE} ${GSTREAMER_FEATURE_DESCRIPTION})
 
 find_feature(JPEG ${JPEG_FEATURE_TYPE} ${JPEG_FEATURE_PURPOSE} ${JPEG_FEATURE_DESCRIPTION})
+find_feature(GSM ${GSM_FEATURE_TYPE} ${GSM_FEATURE_PURPOSE} ${GSM_FEATURE_DESCRIPTION})
 
 if(TARGET_ARCH MATCHES "x86|x64")
 	if (NOT APPLE)

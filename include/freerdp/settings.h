@@ -240,6 +240,15 @@ typedef struct _TARGET_NET_ADDRESS TARGET_NET_ADDRESS;
 #define LOGON_FAILED_OTHER			0x00000002
 #define LOGON_WARNING				0x00000003
 
+/* Server Status Info */
+#define STATUS_FINDING_DESTINATION		0x00000401
+#define STATUS_LOADING_DESTINATION		0x00000402
+#define STATUS_BRINGING_SESSION_ONLINE		0x00000403
+#define STATUS_REDIRECTING_TO_DESTINATION	0x00000404
+#define STATUS_VM_LOADING			0x00000501
+#define STATUS_VM_WAKING			0x00000502
+#define STATUS_VM_BOOTING			0x00000503
+
 /* SYSTEM_TIME */
 typedef struct
 {
@@ -388,6 +397,16 @@ struct rdp_monitor
 	UINT32 is_primary;
 };
 typedef struct rdp_monitor rdpMonitor;
+
+struct _MONITOR_DEF
+{
+	INT32 left;
+	INT32 top;
+	INT32 right;
+	INT32 bottom;
+	UINT32 flags;
+};
+typedef struct _MONITOR_DEF MONITOR_DEF;
 
 /* Device Redirection */
 
@@ -594,6 +613,7 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_RdpKeyFile					1412
 #define FreeRDP_RdpServerRsaKey					1413
 #define FreeRDP_RdpServerCertificate				1414
+#define FreeRDP_ExternalCertificateManagement			1415
 #define FreeRDP_Workarea					1536
 #define FreeRDP_Fullscreen					1537
 #define FreeRDP_PercentScreen					1538
@@ -700,6 +720,7 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_CompDeskSupportLevel				3456
 #define FreeRDP_SurfaceCommandsEnabled				3520
 #define FreeRDP_FrameMarkerCommandEnabled			3521
+#define FreeRDP_SurfaceFrameMarkerEnabled			3522
 #define FreeRDP_RemoteFxOnly					3648
 #define FreeRDP_RemoteFxCodec					3649
 #define FreeRDP_RemoteFxCodecId					3650
@@ -962,7 +983,8 @@ struct rdp_settings
 	ALIGN64 char* RdpKeyFile; /* 1412 */
 	ALIGN64 rdpRsaKey* RdpServerRsaKey; /* 1413 */
 	ALIGN64 rdpCertificate* RdpServerCertificate; /* 1414 */
-	UINT64 padding1472[1472 - 1350]; /* 1415 */
+	ALIGN64 BOOL ExternalCertificateManagement; /* 1415 */
+	UINT64 padding1472[1472 - 1416]; /* 1416 */
 	UINT64 padding1536[1536 - 1472]; /* 1472 */
 
 	/**
@@ -1177,7 +1199,8 @@ struct rdp_settings
 	/* Surface Commands Capabilities */
 	ALIGN64 BOOL SurfaceCommandsEnabled; /* 3520 */
 	ALIGN64 BOOL FrameMarkerCommandEnabled; /* 3521 */
-	UINT64 padding3584[3584 - 3522]; /* 3522 */
+	ALIGN64 BOOL SurfaceFrameMarkerEnabled; /* 3522 */
+	UINT64 padding3584[3584 - 3523]; /* 3523 */
 	UINT64 padding3648[3648 - 3584]; /* 3584 */
 
 	/*

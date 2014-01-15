@@ -43,6 +43,7 @@
 #cmakedefine WITH_ALSA
 #cmakedefine WITH_PULSE
 #cmakedefine WITH_OPENSLES
+#cmakedefine WITH_GSM
 
 /* Plugins */
 #cmakedefine STATIC_CHANNELS

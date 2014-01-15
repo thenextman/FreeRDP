@@ -1,7 +1,7 @@
 # FreeRDP: A Remote Desktop Protocol Implementation
 # Android Client
 #
-# Copyright 2013 Bernhard Miklautz <bmiklautz@thinstuff.at>
+# Copyright 2013 Bernhard Miklautz <bernhard.miklautz@thincast.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,11 +19,10 @@ if (NOT ANDROID_NDK)
 	message(FATAL_ERROR "ANDROID_NDK not set but required for building android native library.")
 endif()
 
-SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER, BOTH)
-find_program(NDK_COMMAND ndk-build)
-SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER, ONLY)
+set(CMAKE_PROGRAM_PATH ${ANDROID_NDK})
+find_program(NDK_COMMAND ndk-build CMAKE_FIND_ROOT_PATH_BOTH)
 
-if(NDK_COMMAND STREQUAL "ANT_COMMAND-NOTFOUND")
+if(NDK_COMMAND STREQUAL "NDK_COMMAND-NOTFOUND")
 	message(FATAL_ERROR "ndk-build not found but required to build native lib")
 endif()
 
@@ -34,9 +33,9 @@ if(ANDROID_BUILD_JAVA)
 	endif()
 	# And isn't shiped with the android ndk/sdk so
 	# we need to find it on the local machine
-  SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER, BOTH)
+  SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM BOTH)
 	find_program(ANT_COMMAND ant)
-  SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER, ONLY)
+  SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY)
 
 	if(ANT_COMMAND STREQUAL "ANT_COMMAND-NOTFOUND")
 		message(FATAL_ERROR "ant not found but required to build android java")

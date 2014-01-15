@@ -2387,13 +2387,15 @@ BOOL rdp_print_large_pointer_capability_set(wStream* s, UINT16 length)
 
 BOOL rdp_read_surface_commands_capability_set(wStream* s, UINT16 length, rdpSettings* settings)
 {
+	UINT32 cmdFlags;
 	if (length < 12)
 		return FALSE;
 
-	Stream_Seek_UINT32(s); /* cmdFlags (4 bytes) */
+	Stream_Read_UINT32(s, cmdFlags); /* cmdFlags (4 bytes) */
 	Stream_Seek_UINT32(s); /* reserved (4 bytes) */
 
 	settings->SurfaceCommandsEnabled = TRUE;
+	settings->SurfaceFrameMarkerEnabled = (cmdFlags & SURFCMDS_FRAME_MARKER);
 
 	return TRUE;
 }
@@ -2414,9 +2416,10 @@ void rdp_write_surface_commands_capability_set(wStream* s, rdpSettings* settings
 
 	header = rdp_capability_set_start(s);
 
-	cmdFlags = SURFCMDS_FRAME_MARKER |
-			SURFCMDS_SET_SURFACE_BITS |
+	cmdFlags = SURFCMDS_SET_SURFACE_BITS |
 			SURFCMDS_STREAM_SURFACE_BITS;
+	if (settings->SurfaceFrameMarkerEnabled)
+		cmdFlags |= SURFCMDS_FRAME_MARKER;
 
 	Stream_Write_UINT32(s, cmdFlags); /* cmdFlags (4 bytes) */
 	Stream_Write_UINT32(s, 0); /* reserved (4 bytes) */
@@ -3156,13 +3159,21 @@ BOOL rdp_read_capability_sets(wStream* s, rdpSettings* settings, UINT16 numberCa
 	Stream_GetPointer(s, mark);
 	count = numberCapabilities;
 
-	while (numberCapabilities > 0)
+	while (numberCapabilities > 0 && Stream_GetRemainingLength(s) >= 4)
 	{
 		Stream_GetPointer(s, bm);
 
 		rdp_read_capability_set_header(s, &length, &type);
 
-		settings->ReceivedCapabilities[type] = TRUE;
+		if (type < 32)
+		{
+			settings->ReceivedCapabilities[type] = TRUE;
+		}
+		else
+		{
+			fprintf(stderr, "%s: not handling capability type %d yet\n", __FUNCTION__, type);
+		}
+
 		em = bm + length;
 
 		if (Stream_GetRemainingLength(s) < length - 4)
@@ -3331,6 +3342,12 @@ BOOL rdp_read_capability_sets(wStream* s, rdpSettings* settings, UINT16 numberCa
 
 		Stream_SetPointer(s, em);
 		numberCapabilities--;
+	}
+
+	if (numberCapabilities)
+	{
+		fprintf(stderr, "%s: strange we haven't read the number of announced capacity sets, read=%d expected=%d\n",
+				__FUNCTION__, count-numberCapabilities, count);
 	}
 
 #ifdef WITH_DEBUG_CAPABILITIES
