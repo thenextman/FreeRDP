@@ -41,15 +41,15 @@
 
 #include "rdpsnd_main.h"
 
-#define IOS_AUDIO_NUM_BUFFERS	8
-#define IOS_AUDIO_BUFFER_SIZE	32768
-
 extern void rdpsnd_send_wave_confirm_pdu(rdpsndPlugin* rdpsnd, UINT16 wTimeStamp, BYTE cConfirmedBlockNo);
 
-#define IOS_AUDIO_BLOCK_STATE_NULL		0x00000000
-#define IOS_AUDIO_BLOCK_STATE_PENDING		0x00000001
-#define IOS_AUDIO_BLOCK_STATE_ENQUEUED		0x00000002
-#define IOS_AUDIO_BLOCK_STATE_CONFIRMED		0x00000003
+struct _AudioQueueNode
+{
+	BOOL bSilence;
+	int64_t cBlockNo;
+	AudioQueueBufferRef buffer;
+};
+typedef struct _AudioQueueNode AudioQueueNode;
 
 struct _IOS_AUDIO_BLOCK
 {
@@ -58,7 +58,6 @@ struct _IOS_AUDIO_BLOCK
 	UINT16 wAudioLength;
 	UInt64 mMachTimeA;
 	UInt64 mMachTimeB;
-	RDPSND_WAVE* wave;
 };
 typedef struct _IOS_AUDIO_BLOCK IOS_AUDIO_BLOCK;
 
@@ -71,26 +70,29 @@ struct rdpsnd_ios_plugin
 	BOOL isRunning;
 	
 	AUDIO_FORMAT format;
+	UInt64 mPlaybackTime;
 	
 	__attribute__((aligned(8))) int64_t cBlockNo;
 	__attribute__((aligned(8))) int64_t cConfirmedBlockNo;
 		
 	IOS_AUDIO_BLOCK audioBlocks[256];
 	
-	wQueue* waveQueue;
-	wQueue* audioBufferQueue;
+	wQueue* queue;
+	HANDLE runningEvent;
 	
 	pthread_t thread;
 	pthread_attr_t attr;
 	struct sched_param param;
 	
+	pthread_mutex_t mutex_confirm;
+	pthread_cond_t cond_confirm;
+	
 	CRITICAL_SECTION lock;
 	BOOL isAudioSessionInitialized;
 	AudioStreamBasicDescription audioFormat;
 	
-	int audioQueueSize;
 	AudioQueueRef audioQueue;
-	AudioQueueBufferRef audioBuffers[IOS_AUDIO_NUM_BUFFERS];
+	AudioQueueTimelineRef audioTimeline;
 };
 typedef struct rdpsnd_ios_plugin rdpsndIOSPlugin;
 
@@ -170,18 +172,23 @@ int ios_audio_confirm_pending_blocks(rdpsndIOSPlugin* ios, BOOL flush)
 
 static void* ios_audio_thread(void* arg)
 {
-	UInt64 mMachTime;
-	UInt64 mMachInterval;
+	UInt64 mWaitEndTime;
+	IOS_AUDIO_BLOCK* pBlock;
 	
 	rdpsndIOSPlugin* ios = (rdpsndIOSPlugin*) arg;
 	
-	mMachInterval = milliseconds_to_mach_time(10);
-	
 	while (1)
 	{
-		mMachTime = mach_absolute_time();
+		pthread_mutex_lock(&ios->mutex_confirm);
 		
-		mach_wait_until(mMachTime + mMachInterval);
+		pthread_cond_wait(&ios->cond_confirm, &ios->mutex_confirm);
+		
+		pBlock = &(ios->audioBlocks[ios->cConfirmedBlockNo % 256]);
+		mWaitEndTime = pBlock->mMachTimeB;
+		
+		pthread_mutex_unlock(&ios->mutex_confirm);
+		
+		mach_wait_until(mWaitEndTime);
 		
 		ios_audio_confirm_pending_blocks(ios, FALSE);
 	}
@@ -189,86 +196,53 @@ static void* ios_audio_thread(void* arg)
 	return NULL;
 }
 
-static int ios_audio_enqueue_buffer(rdpsndIOSPlugin* ios, RDPSND_WAVE* wave, AudioQueueBufferRef inBuffer)
-{
-	BYTE cBlockNo;
-	OSStatus status;
-	UInt64 machAudioLength;
-	IOS_AUDIO_BLOCK* pBlock;
-	
-	cBlockNo = wave->cBlockNo;
-	inBuffer->mAudioDataByteSize = wave->length;
-	CopyMemory(inBuffer->mAudioData, wave->data, wave->length);
-	free(wave->data);
-	free(wave);
-	
-	AudioTimeStamp inStartTime;
-	AudioTimeStamp outActualStartTime;
-	
-	ZeroMemory(&inStartTime, sizeof(AudioTimeStamp));
-	
-	status = AudioQueueEnqueueBufferWithParameters(ios->audioQueue, inBuffer, 0, NULL,
-						       0, 0, 0, NULL, NULL, &outActualStartTime);
-	
-	if (status != 0)
-	{
-		printf("AudioQueueEnqueueBufferWithParameters failure\n");
-	}
-	
-	if (!(outActualStartTime.mFlags & kAudioTimeStampHostTimeValid))
-	{
-		outActualStartTime.mHostTime = mach_absolute_time();
-	}
-	
-	pBlock = &(ios->audioBlocks[cBlockNo]);
-	
-	machAudioLength = milliseconds_to_mach_time(pBlock->wAudioLength);
-	pBlock->mMachTimeB = outActualStartTime.mHostTime + machAudioLength;
-	pBlock->bValid = TRUE;
-	
-	OSAtomicIncrement64Barrier(&(ios->cBlockNo));
-	
-	return 0;
-}
-
 static void ios_audio_queue_output_cb(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer)
 {
-	RDPSND_WAVE* wave;
-	rdpsndIOSPlugin* ios = (rdpsndIOSPlugin*) inUserData;
+	BOOL underrun;
+	OSStatus status;
+	AudioQueueNode* node;
+	rdpsndIOSPlugin* ios;
+	IOS_AUDIO_BLOCK* pBlock;
 	
-	wave = (RDPSND_WAVE*) Queue_Dequeue(ios->waveQueue);
+	ios = (rdpsndIOSPlugin*) inUserData;
+	node = inBuffer->mUserData;
 	
-	if (!ios->isOpen)
+	if (!node)
+	{
+		AudioQueueFreeBuffer(inAQ, inBuffer);
 		return;
-	
-	if (wave)
-	{
-		if (inBuffer->mAudioDataBytesCapacity < wave->length)
-		{
-			fprintf(stderr, "ios_audio_queue_output_cb: error: audio queue buffer capacity exceeded\n");
-		}
-		
-		ios_audio_enqueue_buffer(ios, wave, inBuffer);
 	}
-	else
-	{
-		OSStatus status;
 	
-		printf("Buffer underrun\n");
+	pBlock = &(ios->audioBlocks[node->cBlockNo % 256]);
+	underrun = (node->cBlockNo == ios->cBlockNo) ? TRUE : FALSE;
+	
+	if (underrun)
+	{
+		printf("Buffer underrun!\n");
 		
 		inBuffer->mAudioDataByteSize = inBuffer->mAudioDataBytesCapacity;
 		ZeroMemory(inBuffer->mAudioData, inBuffer->mAudioDataBytesCapacity);
 		
-		status = AudioQueueEnqueueBufferWithParameters(ios->audioQueue, inBuffer, 0, NULL,
+		node->bSilence = TRUE;
+		
+		status = AudioQueueEnqueueBufferWithParameters(inAQ, inBuffer, 0, NULL,
 							       0, 0, 0, NULL, NULL, NULL);
 		
 		if (status != 0)
 		{
 			printf("AudioQueueEnqueueBufferWithParameters failure\n");
 		}
-
-		//AudioQueueStop(inAQ, TRUE);
-		//ios->isPlaying = FALSE;
+	}
+	else
+	{
+#if 0
+		pthread_mutex_lock(&ios->mutex_confirm);
+		pthread_cond_signal(&ios->cond_confirm);
+		pthread_mutex_unlock(&ios->mutex_confirm);
+#endif
+		
+		AudioQueueFreeBuffer(inAQ, inBuffer);
+		free(node);
 	}
 }
 
@@ -297,6 +271,8 @@ static void ios_audio_queue_property_listener_is_running_cb(void* inUserData, Au
 		printf("kAudioQueueProperty_IsRunning: %d\n", (int) isRunning);
 		
 		ios->isRunning = (BOOL) isRunning;
+		
+		SetEvent(ios->runningEvent);
 	}
 }
 
@@ -436,9 +412,21 @@ static void rdpsnd_ios_start(rdpsndDevicePlugin* device)
 	if (!ios->isPlaying)
 	{
 		OSStatus status;
+		AudioQueueBufferRef buffer;
 		
 		if (!ios->audioQueue)
 			return;
+		
+		AudioQueueAllocateBuffer(ios->audioQueue, 2048, &(buffer));
+		
+		buffer->mAudioDataByteSize = 2048;
+		ZeroMemory(buffer->mAudioData, 2048);
+		buffer->mUserData = NULL;
+		
+		status = AudioQueueEnqueueBufferWithParameters(ios->audioQueue, buffer, 0, NULL,
+							       0, 0, 0, NULL, NULL, NULL);
+		
+		ResetEvent(ios->runningEvent);
 		
 		status = AudioQueueStart(ios->audioQueue, NULL);
 		
@@ -447,51 +435,111 @@ static void rdpsnd_ios_start(rdpsndDevicePlugin* device)
 			printf("AudioQueueStart failed\n");
 		}
 		
+		WaitForSingleObject(ios->runningEvent, INFINITE);
+		
 		ios->isPlaying = TRUE;
 	}
 }
 
 static void rdpsnd_ios_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 {
-	BYTE* data;
+	OSStatus status;
+	UINT16 wTimeDiff;
+	AudioQueueNode* node;
+	UInt64 machAudioLength;
 	IOS_AUDIO_BLOCK* pBlock;
-	AudioQueueBufferRef audioBuffer;
+	AudioTimeStamp inStartTime;
+	AudioTimeStamp outActualStartTime;
 	rdpsndIOSPlugin* ios = (rdpsndIOSPlugin*) device;
 	
-	pBlock = &(ios->audioBlocks[wave->cBlockNo]);
+	/* https://developer.apple.com/library/ios/qa/qa1643/_index.html */
 	
+	if (wave->cBlockNo != (ios->cBlockNo % 256))
+	{
+		printf("out of sequence block number: actual: %d expected: %d\n",
+		       wave->cBlockNo, (int) (ios->cBlockNo % 256));
+		return;
+	}
+	
+	device->Start(device);
+	
+	node = (AudioQueueNode*) malloc(sizeof(AudioQueueNode));
+	ZeroMemory(node, sizeof(AudioQueueNode));
+	
+	node->cBlockNo = ios->cBlockNo;
+	AudioQueueAllocateBuffer(ios->audioQueue, wave->length, &(node->buffer));
+	
+	node->buffer->mAudioDataByteSize = wave->length;
+	CopyMemory(node->buffer->mAudioData, wave->data, wave->length);
+	node->buffer->mUserData = (void*) node;
+	
+	AudioTimeStamp outTimeStamp;
+	Boolean outTimelineDiscontinuity = false;
+	
+	status = AudioQueueGetCurrentTime(ios->audioQueue,
+					  ios->audioTimeline,
+					  &outTimeStamp,
+					  &outTimelineDiscontinuity);
+	
+	if (status != 0)
+	{
+		printf("AudioQueueGetCurrentTime failure\n");
+	}
+	
+	if (outTimelineDiscontinuity)
+	{
+		printf("Timeline discontinuity detected!\n");
+	}
+	
+	if (!(outTimeStamp.mFlags & kAudioTimeStampHostTimeValid))
+	{
+		printf("AudioQueueGetCurrentTime invalid host time\n");
+		outTimeStamp.mHostTime = mach_absolute_time();
+	}
+	
+	ZeroMemory(&inStartTime, sizeof(AudioTimeStamp));
+	
+	inStartTime.mFlags = kAudioTimeStampHostTimeValid;
+	inStartTime.mHostTime = mach_absolute_time();
+	
+	status = AudioQueueEnqueueBufferWithParameters(ios->audioQueue, node->buffer, 0, NULL,
+						       0, 0, 0, NULL, &inStartTime, &outActualStartTime);
+	
+	if (status != 0)
+	{
+		printf("AudioQueueEnqueueBufferWithParameters failure\n");
+	}
+	
+	if (!(outActualStartTime.mFlags & kAudioTimeStampHostTimeValid))
+	{
+		outActualStartTime.mHostTime = mach_absolute_time();
+	}
+	
+	pBlock = &(ios->audioBlocks[node->cBlockNo % 256]);
 	ZeroMemory(pBlock, sizeof(IOS_AUDIO_BLOCK));
 	
 	pBlock->wTimeStamp = wave->wTimeStampA;
 	pBlock->wAudioLength = wave->wAudioLength;
 	pBlock->mMachTimeA = mach_absolute_time();
-	pBlock->wave = wave;
 	
-	wave->AutoConfirm = FALSE;
+	machAudioLength = milliseconds_to_mach_time(pBlock->wAudioLength);
+	pBlock->mMachTimeB = outActualStartTime.mHostTime + machAudioLength;
+	pBlock->bValid = TRUE;
 	
-	data = wave->data;
-	wave->data = (BYTE*) malloc(wave->length);
-	CopyMemory(wave->data, data, wave->length);
+	wTimeDiff = (UINT16) mach_time_to_milliseconds(pBlock->mMachTimeB - pBlock->mMachTimeA);
+	
+	wave->wTimeStampB = wave->wTimeStampA + wTimeDiff;
+	wave->wLocalTimeB = wave->wLocalTimeA + wTimeDiff;
+	
+	printf("wTimeDiff: %d cBlockNo: %d\n", wTimeDiff, wave->cBlockNo);
 	
 	OSAtomicIncrement64Barrier(&(ios->cBlockNo));
 	
-	audioBuffer = Queue_Dequeue(ios->audioBufferQueue);
-	
-	if (audioBuffer)
-	{
-		ios_audio_enqueue_buffer(ios, wave, audioBuffer);
-	}
-	else
-	{
-		Queue_Enqueue(ios->waveQueue, wave);
-	}
-	
-	rdpsnd_ios_start(device);
+	//wave->AutoConfirm = FALSE;
 }
 
 static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, int __unused latency)
 {
-	int index;
 	OSStatus status;
 	rdpsndIOSPlugin* ios = (rdpsndIOSPlugin*) device;
 	
@@ -514,6 +562,14 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 	if (status != 0)
 	{
 		printf("AudioQueueNewOutput failure\n");
+		return;
+	}
+	
+	status = AudioQueueCreateTimeline(ios->audioQueue, &(ios->audioTimeline));
+	
+	if (status != 0)
+	{
+		printf("AudioQueueCreateTimeline failure\n");
 		return;
 	}
 	
@@ -541,28 +597,11 @@ static void rdpsnd_ios_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 	
 	printf("kAudioQueueProperty_DecodeBufferSizeFrames: %d\n", (int) DecodeBufferSizeFrames);
 	
-	ios->audioBufferQueue = Queue_New(TRUE, 0, 0);
-	
-	for (index = 0; index < IOS_AUDIO_NUM_BUFFERS; index++)
-	{
-		status = AudioQueueAllocateBuffer(ios->audioQueue, IOS_AUDIO_BUFFER_SIZE, &(ios->audioBuffers[index]));
-	
-		if (status != 0)
-		{
-			printf("AudioQueueAllocateBuffer failed\n");
-		}
-		else
-		{
-			Queue_Enqueue(ios->audioBufferQueue, ios->audioBuffers[index]);
-		}
-	}
-	
 	ios->isOpen = TRUE;
 }
 
 static void rdpsnd_ios_close(rdpsndDevicePlugin* device)
 {
-	int index;
 	rdpsndIOSPlugin* ios = (rdpsndIOSPlugin*) device;
 	
 	printf("rdpsnd_ios_close\n");
@@ -573,15 +612,10 @@ static void rdpsnd_ios_close(rdpsndDevicePlugin* device)
 		
 		AudioQueueStop(ios->audioQueue, true);
 		
+		AudioQueueDisposeTimeline(ios->audioQueue, ios->audioTimeline);
+		
 		AudioQueueRemovePropertyListener(ios->audioQueue, kAudioQueueProperty_IsRunning,
 						 ios_audio_queue_property_listener_is_running_cb, ios);
-		
-		for (index = 0; index < IOS_AUDIO_NUM_BUFFERS; index++)
-		{
-			AudioQueueFreeBuffer(ios->audioQueue, ios->audioBuffers[index]);
-		}
-		
-		Queue_Free(ios->audioBufferQueue);
 		
 		AudioQueueDispose(ios->audioQueue, true);
 
@@ -622,20 +656,26 @@ int freerdp_rdpsnd_client_subsystem_entry(PFREERDP_RDPSND_DEVICE_ENTRY_POINTS pE
 		ios->device.Close = rdpsnd_ios_close;
 		ios->device.Free = rdpsnd_ios_free;
 		ios->device.WavePlay = rdpsnd_ios_wave_play;
-	
-		ios->waveQueue = Queue_New(TRUE, 0, 0);
+			
+		ios->queue = Queue_New(TRUE, 0, 0);
+		ios->runningEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 		
-		ios->device.DisableConfirmThread = TRUE;
+		//ios->device.DisableConfirmThread = TRUE;
 		
 		InitializeCriticalSectionAndSpinCount(&(ios->lock), 4000);
 		
 		pEntryPoints->pRegisterRdpsndDevice(pEntryPoints->rdpsnd, (rdpsndDevicePlugin*) ios);
 		
+		pthread_cond_init(&ios->cond_confirm, NULL);
+		pthread_mutex_init(&ios->mutex_confirm, NULL);
+		
+#if 0
 		pthread_attr_init(&ios->attr);
 		ios->param.sched_priority = sched_get_priority_max(SCHED_FIFO);
 		pthread_attr_setschedparam(&ios->attr, &ios->param);
 		pthread_attr_setschedpolicy(&ios->attr, SCHED_FIFO);
 		pthread_create(&ios->thread, &ios->attr, ios_audio_thread, (void*) ios);
+#endif
 	}
 	
 	return 0;
