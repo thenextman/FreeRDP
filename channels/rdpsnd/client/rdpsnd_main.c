@@ -99,9 +99,9 @@ static void rdpsnd_confirm_wave(rdpsndPlugin* rdpsnd, RDPSND_WAVE* wave);
 static void* rdpsnd_schedule_thread(void* arg)
 {
 	wMessage message;
-	UINT16 wTimeDiff;
-	UINT16 wTimeStamp;
-	UINT16 wCurrentTime;
+	UINT32 wTimeDiff;
+	UINT32 wTimeStamp;
+	UINT32 wCurrentTime;
 	RDPSND_WAVE* wave;
 	rdpsndPlugin* rdpsnd = (rdpsndPlugin*) arg;
 
@@ -117,10 +117,10 @@ static void* rdpsnd_schedule_thread(void* arg)
 			break;
 
 		wave = (RDPSND_WAVE*) message.wParam;
-		wCurrentTime = (UINT16) GetTickCount();
+		wCurrentTime = GetTickCount();
 		wTimeStamp = wave->wLocalTimeB;
 
-		if (wCurrentTime <= wTimeStamp)
+		if (wCurrentTime < wTimeStamp)
 		{
 			wTimeDiff = wTimeStamp - wCurrentTime;
 			Sleep(wTimeDiff);
@@ -420,8 +420,15 @@ void rdpsnd_send_wave_confirm_pdu(rdpsndPlugin* rdpsnd, UINT16 wTimeStamp, BYTE 
 
 void rdpsnd_confirm_wave(rdpsndPlugin* rdpsnd, RDPSND_WAVE* wave)
 {
+	UINT32 wTimeDiff;
+	
+	if (wave->wTimeStampB >= wave->wTimeStampA)
+		wTimeDiff = wave->wTimeStampB - wave->wTimeStampA;
+	else
+		wTimeDiff = (wave->wTimeStampB + 0xFFFF) - wave->wTimeStampA;
+	
 	WLog_Print(rdpsnd->log, WLOG_DEBUG, "WaveConfirm: cBlockNo: %d wTimeStamp: %d wTimeDiff: %d",
-			wave->cBlockNo, wave->wTimeStampB, wave->wTimeStampB - wave->wTimeStampA);
+			wave->cBlockNo, wave->wTimeStampB, wTimeDiff);
 
 	rdpsnd_send_wave_confirm_pdu(rdpsnd, wave->wTimeStampB, wave->cBlockNo);
 }
