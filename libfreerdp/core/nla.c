@@ -192,7 +192,7 @@ int credssp_ntlm_client_init(rdpCredssp* credssp)
 
 #ifdef WITH_DEBUG_NLA
 #ifdef UNICODE
-	DEBUG_NLA("User: %s Domain: %s Password: %s", (char*) credssp->identity.User, (char*) credssp->identity.Domain, (char*) credssp->identity.Password);
+	DEBUG_NLA("User: %S Domain: %S Password: %S", credssp->identity.User, credssp->identity.Domain, credssp->identity.Password);
 #else
 	DEBUG_NLA("User: %s Domain: %s Password: %s", (char*) credssp->identity.User, (char*) credssp->identity.Domain, (char*) credssp->identity.Password);
 #endif // UNICODE
@@ -1161,7 +1161,7 @@ int credssp_write_ts_cspdata_detail(rdpCredssp* credssp, wStream* s)
 		size += ber_write_sequence_octet_string(s, 4, (BYTE*)credssp->settings->SmartCard_CSP_Data.pszCspName, credssp->settings->SmartCard_CSP_Data.cbCspName);
 	}
 
-#if defined(DEBUG_WITH_CREDSSP)
+#if defined(WITH_DEBUG_CREDSSP)
 	{
 		void *n = s->pointer-size;
 		SaveBufferToFile("tscspdetail.ber", (PBYTE)n, size);
@@ -1194,7 +1194,7 @@ int credssp_write_ts_smartcard_creds(rdpCredssp* credssp, wStream* s)
 	size += ber_write_contextual_tag(s, 1, ber_sizeof_octet_string(cspdataSize), TRUE);
 	size += credssp_write_ts_cspdata_detail(credssp, s);
 
-#if defined(DEBUG_WITH_CREDSSP)
+#if defined(WITH_DEBUG_CREDSSP)
 	{
 		void *n = s->pointer-size;
 		SaveBufferToFile("tssmartcardcreds.ber", (BYTE*)n, size);
@@ -1358,7 +1358,7 @@ SECURITY_STATUS credssp_encrypt_ts_credentials(rdpCredssp* credssp)
 	CopyMemory(Buffers[1].pvBuffer, credssp->ts_credentials.pvBuffer, Buffers[1].cbBuffer);
 #endif
 
-#if defined(WITH_DEBUG_SCARD)
+#if defined(WITH_DEBUG_CREDSSP)
 	SaveBufferToFile("credentials.ber", (PBYTE)credssp->ts_credentials.pvBuffer, credssp->ts_credentials.cbBuffer);
 	SaveBufferToFile("credentials2.ber", (PBYTE)Buffers[1].pvBuffer, Buffers[1].cbBuffer);
 #endif
@@ -1389,7 +1389,7 @@ SECURITY_STATUS credssp_encrypt_ts_credentials(rdpCredssp* credssp)
 
 	DEBUG_CREDSSP("Adjusted Token Size: %ld (%#lx)", Buffers[0].cbBuffer, Buffers[0].cbBuffer);
 
-#if defined(WITH_DEBUG_SCARD)
+#if defined(WITH_DEBUG_CREDSSP)
 	SaveBufferToFile("authinfo-encrypted.raw", (PBYTE)credssp->authInfo.pvBuffer, credssp->authInfo.cbBuffer);
 #endif
 
