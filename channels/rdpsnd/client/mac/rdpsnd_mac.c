@@ -31,13 +31,12 @@
 #include <freerdp/codec/dsp.h>
 #include <freerdp/utils/svc_plugin.h>
 
+#include <mach/mach_time.h>
+
 #include <AudioToolbox/AudioToolbox.h>
 #include <AudioToolbox/AudioQueue.h>
 
 #include "rdpsnd_main.h"
-
-#define MAC_AUDIO_QUEUE_NUM_BUFFERS	10
-#define MAC_AUDIO_QUEUE_BUFFER_SIZE	32768
 
 struct rdpsnd_mac_plugin
 {
@@ -52,13 +51,14 @@ struct rdpsnd_mac_plugin
     
 	AudioQueueRef audioQueue;
 	AudioStreamBasicDescription audioFormat;
-	AudioQueueBufferRef audioBuffers[MAC_AUDIO_QUEUE_NUM_BUFFERS];
 };
 typedef struct rdpsnd_mac_plugin rdpsndMacPlugin;
 
 static void mac_audio_queue_output_cb(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer)
 {
+	//rdpsndMacPlugin* mac = (rdpsndMacPlugin*) inBuffer->mUserData;
 	
+	AudioQueueFreeBuffer(inAQ, inBuffer);
 }
 
 static void rdpsnd_mac_set_format(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, int latency)
@@ -104,7 +104,6 @@ static void rdpsnd_mac_set_format(rdpsndDevicePlugin* device, AUDIO_FORMAT* form
 
 static void rdpsnd_mac_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, int latency)
 {
-	int index;
 	OSStatus status;
     
 	rdpsndMacPlugin* mac = (rdpsndMacPlugin*) device;
@@ -137,16 +136,6 @@ static void rdpsnd_mac_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 	if (status != 0)
 	{
 		printf("AudioQueueGetProperty failure: kAudioQueueProperty_DecodeBufferSizeFrames\n");
-	}
-    
-	for (index = 0; index < MAC_AUDIO_QUEUE_NUM_BUFFERS; index++)
-	{
-		status = AudioQueueAllocateBuffer(mac->audioQueue, MAC_AUDIO_QUEUE_BUFFER_SIZE, &mac->audioBuffers[index]);
-		
-		if (status != 0)
-		{
-			fprintf(stderr, "AudioQueueAllocateBuffer failed\n");
-		}
 	}
     
 	mac->isOpen = TRUE;
@@ -246,30 +235,53 @@ static void rdpsnd_mac_start(rdpsndDevicePlugin* device)
 	}
 }
 
-static void rdpsnd_mac_play(rdpsndDevicePlugin* device, BYTE* data, int size)
+void rdpsnd_mac_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 {
-	int length;
+	OSStatus status;
+	UINT64 mCurrentTime;
+	AudioTimeStamp inStartTime;
+	AudioTimeStamp outActualStartTime;
 	AudioQueueBufferRef audioBuffer;
 	rdpsndMacPlugin* mac = (rdpsndMacPlugin*) device;
 	
 	if (!mac->isOpen)
 		return;
-
-	audioBuffer = mac->audioBuffers[mac->audioBufferIndex];
-    
-	length = size > audioBuffer->mAudioDataBytesCapacity ? audioBuffer->mAudioDataBytesCapacity : size;
-    
-	CopyMemory(audioBuffer->mAudioData, data, length);
-	audioBuffer->mAudioDataByteSize = length;
-    
-	AudioQueueEnqueueBuffer(mac->audioQueue, audioBuffer, 0, 0);
-    
-	mac->audioBufferIndex++;
-
-	if (mac->audioBufferIndex >= MAC_AUDIO_QUEUE_NUM_BUFFERS)
+	
+	mCurrentTime = mach_absolute_time();
+	
+	status = AudioQueueAllocateBuffer(mac->audioQueue, wave->length, &audioBuffer);
+	
+	if (status != 0)
 	{
-		mac->audioBufferIndex = 0;
+		fprintf(stderr, "AudioQueueAllocateBuffer failed\n");
+		return;
 	}
+	
+	CopyMemory(audioBuffer->mAudioData, wave->data, wave->length);
+	audioBuffer->mAudioDataByteSize = wave->length;
+	
+	ZeroMemory(&inStartTime, sizeof(AudioTimeStamp));
+	
+	inStartTime.mFlags = kAudioTimeStampHostTimeValid;
+	inStartTime.mHostTime = mCurrentTime;
+	
+	status = AudioQueueEnqueueBufferWithParameters(mac->audioQueue, audioBuffer, 0, NULL,
+						       0, 0, 0, NULL, &inStartTime, &outActualStartTime);
+	
+	if (status != 0)
+	{
+		printf("AudioQueueEnqueueBufferWithParameters failure\n");
+		return;
+	}
+	
+	if (!(outActualStartTime.mFlags & kAudioTimeStampHostTimeValid))
+	{
+		printf("AudioQueueEnqueueBufferWithParameters invalid host time\n");
+		outActualStartTime.mHostTime = mCurrentTime;
+	}
+	
+	wave->wTimeStampB = wave->wTimeStampA + wave->wAudioLength + 65;
+	wave->wLocalTimeB = wave->wLocalTimeA + wave->wAudioLength + 65;
 	
 	device->Start(device);
 }
@@ -292,7 +304,7 @@ int freerdp_rdpsnd_client_subsystem_entry(PFREERDP_RDPSND_DEVICE_ENTRY_POINTS pE
 		mac->device.FormatSupported = rdpsnd_mac_format_supported;
 		mac->device.SetFormat = rdpsnd_mac_set_format;
 		mac->device.SetVolume = rdpsnd_mac_set_volume;
-		mac->device.Play = rdpsnd_mac_play;
+		mac->device.WavePlay = rdpsnd_mac_wave_play;
 		mac->device.Start = rdpsnd_mac_start;
 		mac->device.Close = rdpsnd_mac_close;
 		mac->device.Free = rdpsnd_mac_free;
