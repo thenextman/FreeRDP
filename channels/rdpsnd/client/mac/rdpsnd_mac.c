@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include <winpr/crt.h>
+#include <winpr/sysinfo.h>
 
 #include <freerdp/types.h>
 #include <freerdp/codec/dsp.h>
@@ -38,6 +39,18 @@
 
 #include "rdpsnd_main.h"
 
+typedef struct rdpsnd_mac_plugin rdpsndMacPlugin;
+
+struct mac_audio_apc_data
+{
+	int cBlockNo;
+	DWORD DueTime;
+	UINT64 wTimeStampA;
+	UINT64 mTimeStampA;
+	rdpsndMacPlugin* mac;
+};
+typedef struct mac_audio_apc_data MAC_AUDIO_APC_DATA;
+
 struct rdpsnd_mac_plugin
 {
 	rdpsndDevicePlugin device;
@@ -48,16 +61,32 @@ struct rdpsnd_mac_plugin
 	UINT32 latency;
 	AUDIO_FORMAT format;
 	int audioBufferIndex;
-    
+	
+	HANDLE hTimerQueue;
+	HANDLE hTimers[256];
+	MAC_AUDIO_APC_DATA apcData[256];
+	
 	AudioQueueRef audioQueue;
 	AudioStreamBasicDescription audioFormat;
 };
-typedef struct rdpsnd_mac_plugin rdpsndMacPlugin;
+
+extern void rdpsnd_send_wave_confirm_pdu(rdpsndPlugin* rdpsnd, UINT16 wTimeStamp, BYTE cConfirmedBlockNo);
+
+static double machTimeFactorNano = 1.0;
+static mach_timebase_info_data_t machTimebaseInfo = { 0, 0 };
+
+UINT64 mach_time_to_milliseconds(UINT64 machTime)
+{
+	return ((UINT64) ((machTime / 1000000) * machTimeFactorNano));
+}
+
+UINT64 milliseconds_to_mach_time(UINT64 milliTime)
+{
+	return (UINT64) ((double) ((UINT64) milliTime * 1000000) / machTimeFactorNano);
+}
 
 static void mac_audio_queue_output_cb(void* inUserData, AudioQueueRef inAQ, AudioQueueBufferRef inBuffer)
 {
-	//rdpsndMacPlugin* mac = (rdpsndMacPlugin*) inBuffer->mUserData;
-	
 	AudioQueueFreeBuffer(inAQ, inBuffer);
 }
 
@@ -164,6 +193,11 @@ static void rdpsnd_mac_free(rdpsndDevicePlugin* device)
 	
 	device->Close(device);
 	
+	if (!DeleteTimerQueue(mac->hTimerQueue))
+	{
+		printf("DeleteTimerQueue failed (%d)\n", (int) GetLastError());
+	}
+	
 	free(mac);
 }
 
@@ -235,10 +269,37 @@ static void rdpsnd_mac_start(rdpsndDevicePlugin* device)
 	}
 }
 
+VOID CALLBACK rdpsnd_mac_timer_routine(PVOID lpParam, BOOLEAN TimerOrWaitFired)
+{
+	UINT64 wTimeDiff;
+	UINT64 mCurrentTime;
+	UINT16 wTimeStampB;
+	rdpsndMacPlugin* mac;
+	MAC_AUDIO_APC_DATA* apcData;
+	
+	apcData = (MAC_AUDIO_APC_DATA*) lpParam;
+	mac = apcData->mac;
+	
+	mCurrentTime = mach_absolute_time();
+	
+	wTimeDiff = mach_time_to_milliseconds(mCurrentTime - apcData->mTimeStampA);
+	
+	wTimeStampB = (apcData->mTimeStampA + wTimeDiff) % 0xFFFF;
+	
+	//fprintf(stderr, "rdpsnd_mac_timer_routine: cBlockNo: %d DueTime: %d wTimeDiff: %d\n",
+	//	apcData->cBlockNo, (int) apcData->DueTime, (int) wTimeDiff);
+	
+	rdpsnd_send_wave_confirm_pdu(mac->device.rdpsnd, wTimeStampB, apcData->cBlockNo);
+}
+
 void rdpsnd_mac_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 {
+	int index;
 	OSStatus status;
+	UINT64 mEndTime;
 	UINT64 mCurrentTime;
+	UINT64 mAudioLength;
+	MAC_AUDIO_APC_DATA* apcData;
 	AudioTimeStamp inStartTime;
 	AudioTimeStamp outActualStartTime;
 	AudioQueueBufferRef audioBuffer;
@@ -280,8 +341,45 @@ void rdpsnd_mac_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 		outActualStartTime.mHostTime = mCurrentTime;
 	}
 	
-	wave->wTimeStampB = wave->wTimeStampA + wave->wAudioLength + 65;
-	wave->wLocalTimeB = wave->wLocalTimeA + wave->wAudioLength + 65;
+	mAudioLength = milliseconds_to_mach_time(wave->wAudioLength);
+	mEndTime = outActualStartTime.mHostTime + mAudioLength;
+	
+	index = wave->cBlockNo;
+	apcData = &(mac->apcData[index]);
+	apcData->mac = mac;
+	apcData->cBlockNo = wave->cBlockNo;
+	apcData->mTimeStampA = mCurrentTime;
+	apcData->wTimeStampA = wave->wTimeStampA;
+	
+	if (mEndTime < mCurrentTime)
+	{
+		printf("WARNING: mEndTime <= mCurrentTime: %d\n",
+		       (int) mach_time_to_milliseconds(mCurrentTime - mEndTime));
+		mEndTime = mCurrentTime;
+	}
+	
+	apcData->DueTime = mach_time_to_milliseconds(mEndTime - mCurrentTime);
+	
+	wave->AutoConfirm = FALSE;
+	wave->wTimeStampB = wave->wTimeStampA + apcData->DueTime;
+	wave->wLocalTimeB = wave->wLocalTimeA + apcData->DueTime;
+	
+	if (!mac->hTimers[index])
+	{
+		if (!CreateTimerQueueTimer(&(mac->hTimers[index]), mac->hTimerQueue,
+					   (WAITORTIMERCALLBACK) rdpsnd_mac_timer_routine,
+					   apcData, apcData->DueTime, 0, 0))
+		{
+			printf("CreateTimerQueueTimer failed (%d)\n", (int) GetLastError());
+		}
+	}
+	else
+	{
+		if (!ChangeTimerQueueTimer(mac->hTimerQueue, mac->hTimers[index], apcData->DueTime, 0))
+		{
+			printf("ChangeTimerQueueTimer failed (%d)\n", (int) GetLastError());
+		}
+	}
 	
 	device->Start(device);
 }
@@ -308,6 +406,19 @@ int freerdp_rdpsnd_client_subsystem_entry(PFREERDP_RDPSND_DEVICE_ENTRY_POINTS pE
 		mac->device.Start = rdpsnd_mac_start;
 		mac->device.Close = rdpsnd_mac_close;
 		mac->device.Free = rdpsnd_mac_free;
+		
+		mac->device.DisableConfirmThread = TRUE;
+		
+		mac->hTimerQueue = CreateTimerQueue();
+		
+		if (!mac->hTimerQueue)
+		{
+			printf("CreateTimerQueue failed (%d)\n", (int) GetLastError());
+			return -1;
+		}
+		
+		mach_timebase_info(&machTimebaseInfo);
+		machTimeFactorNano = (double) machTimebaseInfo.numer / machTimebaseInfo.denom;
 
 		pEntryPoints->pRegisterRdpsndDevice(pEntryPoints->rdpsnd, (rdpsndDevicePlugin*) mac);
 	}
