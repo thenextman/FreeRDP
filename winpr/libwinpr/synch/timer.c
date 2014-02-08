@@ -372,7 +372,7 @@ void InsertTimerQueueTimer(WINPR_TIMER_QUEUE_TIMER** pHead, WINPR_TIMER_QUEUE_TI
 	}
 
 	node = *pHead;
-
+	
 	while (node->next)
 	{
 		if (timespec_compare(&(timer->ExpirationTime), &(node->ExpirationTime)) > 0)
@@ -395,6 +395,7 @@ void InsertTimerQueueTimer(WINPR_TIMER_QUEUE_TIMER** pHead, WINPR_TIMER_QUEUE_TI
 
 void RemoveTimerQueueTimer(WINPR_TIMER_QUEUE_TIMER** pHead, WINPR_TIMER_QUEUE_TIMER* timer)
 {
+	BOOL found = FALSE;
 	WINPR_TIMER_QUEUE_TIMER* node;
 	WINPR_TIMER_QUEUE_TIMER* prevNode;
 
@@ -411,14 +412,24 @@ void RemoveTimerQueueTimer(WINPR_TIMER_QUEUE_TIMER** pHead, WINPR_TIMER_QUEUE_TI
 	while (node)
 	{
 		if (node == timer)
+		{
+			found = TRUE;
 			break;
+		}
 
 		prevNode = node;
 		node = node->next;
 	}
-
-	prevNode->next = timer->next;
-	timer->next = NULL;
+	
+	if (found)
+	{
+		if (prevNode)
+		{
+			prevNode->next = timer->next;
+		}
+		
+		timer->next = NULL;
+	}
 }
 
 int FireExpiredTimerQueueTimers(WINPR_TIMER_QUEUE* timerQueue)

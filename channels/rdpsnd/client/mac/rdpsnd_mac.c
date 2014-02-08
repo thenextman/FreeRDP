@@ -60,7 +60,12 @@ struct rdpsnd_mac_plugin
 	
 	UINT32 latency;
 	AUDIO_FORMAT format;
-	int audioBufferIndex;
+	
+	int cBlockNo;
+	int cConfirmedBlockNo;
+	UINT64 mPlaybackTime;
+	
+	UINT16 wTimeStampA;
 	
 	HANDLE hTimerQueue;
 	HANDLE hTimers[256];
@@ -139,8 +144,6 @@ static void rdpsnd_mac_open(rdpsndDevicePlugin* device, AUDIO_FORMAT* format, in
 	
 	if (mac->isOpen)
 		return;
-    
-	mac->audioBufferIndex = 0;
     
 	device->SetFormat(device, format, 0);
     
@@ -286,10 +289,22 @@ VOID CALLBACK rdpsnd_mac_timer_routine(PVOID lpParam, BOOLEAN TimerOrWaitFired)
 	
 	wTimeStampB = (apcData->mTimeStampA + wTimeDiff) % 0xFFFF;
 	
-	//fprintf(stderr, "rdpsnd_mac_timer_routine: cBlockNo: %d DueTime: %d wTimeDiff: %d\n",
-	//	apcData->cBlockNo, (int) apcData->DueTime, (int) wTimeDiff);
+	if (!mac->cConfirmedBlockNo)
+		mac->cConfirmedBlockNo = apcData->cBlockNo;
+	
+	//fprintf(stderr, "WaveConfirm: cBlockNo: %d DueTime: %d wTimeDiff: %d Discrepancy: %d\n",
+	//	apcData->cBlockNo, (int) apcData->DueTime, (int) wTimeDiff,
+	//	(int) (wTimeDiff - apcData->DueTime));
+	
+	if (mac->cConfirmedBlockNo != apcData->cBlockNo)
+	{
+		fprintf(stderr, "WARNING: cBlockNo mismatch: Actual: %d, Expected: %d\n",
+			apcData->cBlockNo, mac->cConfirmedBlockNo);
+	}
 	
 	rdpsnd_send_wave_confirm_pdu(mac->device.rdpsnd, wTimeStampB, apcData->cBlockNo);
+	
+	mac->cConfirmedBlockNo = (mac->cConfirmedBlockNo + 1) % 256;
 }
 
 void rdpsnd_mac_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
@@ -323,8 +338,26 @@ void rdpsnd_mac_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 	
 	ZeroMemory(&inStartTime, sizeof(AudioTimeStamp));
 	
+	if (!mac->mPlaybackTime)
+		mac->mPlaybackTime = mCurrentTime;
+	
 	inStartTime.mFlags = kAudioTimeStampHostTimeValid;
-	inStartTime.mHostTime = mCurrentTime;
+	inStartTime.mHostTime = mac->mPlaybackTime;
+	
+	if (mac->mPlaybackTime < mCurrentTime)
+	{
+		//fprintf(stderr, "Already late on playback time: %d ms\n",
+		//	(int) mach_time_to_milliseconds(mCurrentTime - mac->mPlaybackTime));
+	}
+	
+	if (!mac->wTimeStampA)
+		mac->wTimeStampA = wave->wTimeStampA;
+	
+	if (mac->wTimeStampA != wave->wTimeStampA)
+	{
+		//fprintf(stderr, "Server timestamp discrepancy: %d | Actual: %d, Expected: %d\n",
+		//	wave->wTimeStampA - mac->wTimeStampA, wave->wTimeStampA, mac->wTimeStampA);
+	}
 	
 	status = AudioQueueEnqueueBufferWithParameters(mac->audioQueue, audioBuffer, 0, NULL,
 						       0, 0, 0, NULL, &inStartTime, &outActualStartTime);
@@ -339,6 +372,29 @@ void rdpsnd_mac_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 	{
 		printf("AudioQueueEnqueueBufferWithParameters invalid host time\n");
 		outActualStartTime.mHostTime = mCurrentTime;
+	}
+	
+	if (outActualStartTime.mHostTime != inStartTime.mHostTime)
+	{
+		BOOL future;
+		UINT64 mDiscrepancy;
+		UINT64 wDiscrepancy;
+		
+		if (outActualStartTime.mHostTime > inStartTime.mHostTime)
+		{
+			mDiscrepancy = outActualStartTime.mHostTime - inStartTime.mHostTime;
+			future = TRUE;
+		}
+		else
+		{
+			mDiscrepancy = inStartTime.mHostTime - outActualStartTime.mHostTime;
+			future = FALSE;
+		}
+		
+		wDiscrepancy = mach_time_to_milliseconds(mDiscrepancy);
+	
+		//fprintf(stderr, "StartTime Discrepancy: %d ms in the %s\n",
+		//	(int) wDiscrepancy, future ? "future" : "past");
 	}
 	
 	mAudioLength = milliseconds_to_mach_time(wave->wAudioLength);
@@ -359,6 +415,9 @@ void rdpsnd_mac_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 	}
 	
 	apcData->DueTime = mach_time_to_milliseconds(mEndTime - mCurrentTime);
+	
+	mac->mPlaybackTime = mEndTime;
+	mac->wTimeStampA = (mac->wTimeStampA + wave->wAudioLength) % 0xFFFF;
 	
 	wave->AutoConfirm = FALSE;
 	wave->wTimeStampB = wave->wTimeStampA + apcData->DueTime;
