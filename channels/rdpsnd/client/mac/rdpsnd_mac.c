@@ -368,6 +368,8 @@ void rdpsnd_mac_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 		return;
 	}
 	
+	mCurrentTime = mach_absolute_time();
+	
 	if (!(outActualStartTime.mFlags & kAudioTimeStampHostTimeValid))
 	{
 		printf("AudioQueueEnqueueBufferWithParameters invalid host time\n");
@@ -400,6 +402,8 @@ void rdpsnd_mac_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 	mAudioLength = milliseconds_to_mach_time(wave->wAudioLength);
 	mEndTime = outActualStartTime.mHostTime + mAudioLength;
 	
+	UINT64 mMinEndTime = mCurrentTime + mAudioLength;
+	
 	index = wave->cBlockNo;
 	apcData = &(mac->apcData[index]);
 	apcData->mac = mac;
@@ -407,11 +411,11 @@ void rdpsnd_mac_wave_play(rdpsndDevicePlugin* device, RDPSND_WAVE* wave)
 	apcData->mTimeStampA = mCurrentTime;
 	apcData->wTimeStampA = wave->wTimeStampA;
 	
-	if (mEndTime < mCurrentTime)
+	if (mEndTime < mMinEndTime)
 	{
-		printf("WARNING: mEndTime <= mCurrentTime: %d\n",
-		       (int) mach_time_to_milliseconds(mCurrentTime - mEndTime));
-		mEndTime = mCurrentTime;
+		printf("WARNING: mEndTime < mMinEndTime: %d\n",
+		       (int) mach_time_to_milliseconds(mMinEndTime - mEndTime));
+		mEndTime = mMinEndTime;
 	}
 	
 	apcData->DueTime = mach_time_to_milliseconds(mEndTime - mCurrentTime);

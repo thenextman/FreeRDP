@@ -335,6 +335,14 @@ static void timespec_add_ms(struct timespec* tspec, UINT32 ms)
 	tspec->tv_nsec = (ns % 1000000000);
 }
 
+static UINT64 timespec_to_ms(struct timespec* tspec)
+{
+	UINT64 ms;
+	ms = tspec->tv_sec * 1000;
+	ms += tspec->tv_nsec / 1000000;
+	return ms;
+}
+
 static void timespec_gettimeofday(struct timespec* tspec)
 {
 	struct timeval tval;
@@ -345,13 +353,10 @@ static void timespec_gettimeofday(struct timespec* tspec)
 
 static int timespec_compare(const struct timespec* tspec1, const struct timespec* tspec2)
 {
-	if (tspec1->tv_sec < tspec2->tv_sec)
-		return -1;
-
-	if (tspec1->tv_sec > tspec2->tv_sec)
-		return 1;
-
-	return tspec1->tv_nsec - tspec2->tv_nsec;
+	if (tspec1->tv_sec == tspec2->tv_sec)
+		return (tspec1->tv_nsec - tspec2->tv_nsec);
+	else
+		return (tspec1->tv_sec - tspec2->tv_sec);
 }
 
 static void timespec_copy(struct timespec* dst, struct timespec* src)
@@ -376,7 +381,10 @@ void InsertTimerQueueTimer(WINPR_TIMER_QUEUE_TIMER** pHead, WINPR_TIMER_QUEUE_TI
 	while (node->next)
 	{
 		if (timespec_compare(&(timer->ExpirationTime), &(node->ExpirationTime)) > 0)
-			break;
+		{
+			if (timespec_compare(&(timer->ExpirationTime), &(node->next->ExpirationTime)) < 0)
+				break;
+		}
 
 		node = node->next;
 	}
@@ -489,7 +497,7 @@ static void* TimerQueueThread(void* arg)
 
 		if (!timerQueue->activeHead)
 		{
-			timespec_add_ms(&timeout, 100);
+			timespec_add_ms(&timeout, 50);
 		}
 		else
 		{
@@ -545,7 +553,7 @@ HANDLE CreateTimerQueue(void)
 		timerQueue->activeHead = NULL;
 		timerQueue->inactiveHead = NULL;
 		timerQueue->bCancelled = FALSE;
-
+		
 		StartTimerQueueThread(timerQueue);
 	}
 
