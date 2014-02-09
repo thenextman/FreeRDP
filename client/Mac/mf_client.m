@@ -100,10 +100,11 @@ int mfreerdp_client_new(freerdp* instance, rdpContext* context)
 
 	settings = instance->settings;
 
+	settings->AsyncTransport = TRUE;
+	
 	settings->AsyncUpdate = TRUE;
 	settings->AsyncInput = TRUE;
 	settings->AsyncChannels = TRUE;
-	settings->AsyncTransport = TRUE;
 
 	return 0;
 }

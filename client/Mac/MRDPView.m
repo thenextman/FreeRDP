@@ -17,31 +17,6 @@
  * limitations under the License.
  */
 
-/*
- * TODO
- *  + provide a UI for configuring optional parameters, but keep cmd line args
- *  + audio redirection is delayed considerably
- *  + caps lock key needs to be sent in func flagsChanged()
- *  + libfreerdp-utils.1.0.dylib needs to be installed to /usr/local/lib
- *
- *  - MRDPView implementation is incomplete
- *  - all variables should have consistent nameing scheme - camel case
- *  - all funcs same as above
- *  - PolygonSc seems to create a transparent rect
- *  - ensure mouse cursor changes are working ok after moving to NSTracking area
- *  - RAIL:
- *  -
- *  -
- *  -       tool tips to be correctly positioned
- *  -       dragging is slightly of
- *  -       resize after dragging not working
- *  -       dragging app from macbook to monitor gives exec/access err
- *  -       unable to drag rect out of monitor boundaries
- *  -
- *  -
- *  -
- */
-
 #include <winpr/windows.h>
 
 #include "mf_client.h"
@@ -52,6 +27,8 @@
 
 #include <winpr/crt.h>
 #include <winpr/input.h>
+#include <winpr/synch.h>
+#include <winpr/sysinfo.h>
 
 #include <freerdp/constants.h>
 
@@ -66,11 +43,6 @@
 #import "freerdp/client/cliprdr.h"
 #import "freerdp/client/file.h"
 #import "freerdp/client/cmdline.h"
-
-/******************************************
- Forward declarations
- ******************************************/
-
 
 void mf_Pointer_New(rdpContext* context, rdpPointer* pointer);
 void mf_Pointer_Free(rdpContext* context, rdpPointer* pointer);
@@ -97,7 +69,6 @@ void cliprdr_process_cb_data_response_event(freerdp* instance, RDP_CB_DATA_RESPO
 void cliprdr_process_text(freerdp* instance, BYTE* data, int len);
 void cliprdr_send_supported_format_list(freerdp* instance);
 int register_channel_fds(int* fds, int count, freerdp* instance);
-
 
 DWORD mac_client_thread(void* param);
 
@@ -139,10 +110,10 @@ struct rgba_data
 	e.handle = (void*) self;
 	PubSub_OnEmbedWindow(context->pubSub, context, &e);
 
-	NSScreen *screen = [[NSScreen screens] objectAtIndex:0];
+	NSScreen* screen = [[NSScreen screens] objectAtIndex:0];
 	NSRect screenFrame = [screen frame];
 
-	if(instance->settings->Fullscreen)
+	if (instance->settings->Fullscreen)
 	{
 		instance->settings->DesktopWidth  = screenFrame.size.width;
 		instance->settings->DesktopHeight = screenFrame.size.height;
@@ -156,15 +127,105 @@ struct rgba_data
 	return 0;
 }
 
+DWORD mac_client_update_thread(void* param)
+{
+	int status;
+	wMessage message;
+	wMessageQueue* queue;
+	rdpContext* context = (rdpContext*) param;
+	
+	status = 1;
+	queue = freerdp_get_message_queue(context->instance, FREERDP_UPDATE_MESSAGE_QUEUE);
+	
+	while (MessageQueue_Wait(queue))
+	{
+		while (MessageQueue_Peek(queue, &message, TRUE))
+		{
+			status = freerdp_message_queue_process_message(context->instance, FREERDP_UPDATE_MESSAGE_QUEUE, &message);
+			
+			if (!status)
+				break;
+		}
+		
+		if (!status)
+			break;
+	}
+	
+	ExitThread(0);
+	return NULL;
+}
+
+DWORD mac_client_input_thread(void* param)
+{
+	int status;
+	wMessage message;
+	wMessageQueue* queue;
+	rdpContext* context = (rdpContext*) param;
+	
+	status = 1;
+	queue = freerdp_get_message_queue(context->instance, FREERDP_INPUT_MESSAGE_QUEUE);
+	
+	while (MessageQueue_Wait(queue))
+	{
+		while (MessageQueue_Peek(queue, &message, TRUE))
+		{
+			status = freerdp_message_queue_process_message(context->instance, FREERDP_INPUT_MESSAGE_QUEUE, &message);
+			
+			if (!status)
+				break;
+		}
+	}
+	
+	ExitThread(0);
+	return NULL;
+}
+
+DWORD mac_client_channels_thread(void* param)
+{
+	int status;
+	wMessage* event;
+	HANDLE channelsEvent;
+	rdpChannels* channels;
+	rdpContext* context = (rdpContext*) param;
+	
+	channels = context->channels;
+	channelsEvent = freerdp_channels_get_event_handle(context->instance);
+	
+	while (WaitForSingleObject(channelsEvent, INFINITE) == WAIT_OBJECT_0)
+	{
+		status = freerdp_channels_process_pending_messages(context->instance);
+		
+		if (!status)
+			break;
+		
+		event = freerdp_channels_pop_event(context->channels);
+		
+		if (event)
+		{
+			switch (GetMessageClass(event->id))
+			{
+				case CliprdrChannel_Class:
+					process_cliprdr_event(context->instance, event);
+					break;
+			}
+			
+			freerdp_event_free(event);
+		}
+	}
+	
+	ExitThread(0);
+	return NULL;
+}
+
 DWORD mac_client_thread(void* param)
 {
 	@autoreleasepool
 	{
 		int status;
 		HANDLE events[4];
-		HANDLE input_event;
-		HANDLE update_event;
-		HANDLE channels_event;
+		HANDLE inputThread;
+		HANDLE updateThread;
+		HANDLE channelsThread;
 		
 		DWORD nCount;
 		rdpContext* context = (rdpContext*) param;
@@ -189,17 +250,17 @@ DWORD mac_client_thread(void* param)
 		
 		if (settings->AsyncUpdate)
 		{
-			events[nCount++] = update_event = freerdp_get_message_queue_event_handle(instance, FREERDP_UPDATE_MESSAGE_QUEUE);
+			updateThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) mac_client_update_thread, context, 0, NULL);
 		}
 		
 		if (settings->AsyncInput)
 		{
-			events[nCount++] = input_event = freerdp_get_message_queue_event_handle(instance, FREERDP_INPUT_MESSAGE_QUEUE);
+			inputThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) mac_client_input_thread, context, 0, NULL);
 		}
 		
 		if (settings->AsyncChannels)
 		{
-			events[nCount++] = channels_event = freerdp_channels_get_event_handle(instance);
+			channelsThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) mac_client_channels_thread, context, 0, NULL);
 		}
 		
 		while (1)
@@ -211,30 +272,28 @@ DWORD mac_client_thread(void* param)
 				freerdp_disconnect(instance);
 				break;
 			}
-			
-			if (settings->AsyncUpdate)
-			{
-				if (WaitForSingleObject(update_event, 0) == WAIT_OBJECT_0)
-				{
-					update_activity_cb(instance);
-				}
-			}
-			
-			if (settings->AsyncInput)
-			{
-				if (WaitForSingleObject(input_event, 0) == WAIT_OBJECT_0)
-				{
-					input_activity_cb(instance);
-				}
-			}
-			
-			if (settings->AsyncChannels)
-			{
-				if (WaitForSingleObject(channels_event, 0) == WAIT_OBJECT_0)
-				{
-					channel_activity_cb(instance);
-				}
-			}
+		}
+		
+		if (settings->AsyncUpdate)
+		{
+			wMessageQueue* updateQueue = freerdp_get_message_queue(instance, FREERDP_UPDATE_MESSAGE_QUEUE);
+			MessageQueue_PostQuit(updateQueue, 0);
+			WaitForSingleObject(updateThread, INFINITE);
+			CloseHandle(updateThread);
+		}
+		
+		if (settings->AsyncInput)
+		{
+			wMessageQueue* inputQueue = freerdp_get_message_queue(instance, FREERDP_INPUT_MESSAGE_QUEUE);
+			MessageQueue_PostQuit(inputQueue, 0);
+			WaitForSingleObject(inputThread, INFINITE);
+			CloseHandle(inputThread);
+		}
+		
+		if (settings->AsyncChannels)
+		{
+			WaitForSingleObject(channelsThread, INFINITE);
+			CloseHandle(channelsThread);
 		}
 		
 		ExitThread(0);
@@ -1069,32 +1128,6 @@ void mac_desktop_resize(rdpContext* context)
 	view->bitmap_context = mac_create_bitmap_context(context);
 }
 
-static void update_activity_cb(freerdp* instance)
-{
-	int status;
-	wMessage message;
-	wMessageQueue* queue;
-	mfContext* mfc = (mfContext*) (instance->context);
-	
-	status = 1;
-	queue = freerdp_get_message_queue(instance, FREERDP_UPDATE_MESSAGE_QUEUE);
-	
-	if (queue)
-	{
-		while (MessageQueue_Peek(queue, &message, TRUE))
-		{
-			status = freerdp_message_queue_process_message(instance, FREERDP_UPDATE_MESSAGE_QUEUE, &message);
-
-			if (!status)
-				break;
-		}
-	}
-	else
-	{
-		fprintf(stderr, "update_activity_cb: No queue!\n");
-	}
-}
-
 static void input_activity_cb(freerdp* instance)
 {
 	int status;
@@ -1117,28 +1150,6 @@ static void input_activity_cb(freerdp* instance)
 	else
 	{
 		fprintf(stderr, "input_activity_cb: No queue!\n");
-	}
-}
-
-static void channel_activity_cb(freerdp* instance)
-{
-	wMessage* event;
-
-	freerdp_channels_process_pending_messages(instance);
-	event = freerdp_channels_pop_event(instance->context->channels);
-
-	if (event)
-	{
-		fprintf(stderr, "channel_activity_cb: message %d\n", event->id);
-
-		switch (GetMessageClass(event->id))
-		{
-		case CliprdrChannel_Class:
-			process_cliprdr_event(instance, event);
-			break;
-		}
-
-		freerdp_event_free(event);
 	}
 }
 
