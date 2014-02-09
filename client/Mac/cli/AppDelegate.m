@@ -71,7 +71,7 @@ void mac_set_view_size(rdpContext* context, MRDPView* view);
 - (int) ParseCommandLineArguments
 {
 	int i;
-	int len;
+	int length;
 	int status;
 	char* cptr;
 	int argc;
@@ -86,20 +86,25 @@ void mac_set_view_size(rdpContext* context, MRDPView* view);
 	
 	for (NSString* str in args)
 	{
-		len = (int) ([str length] + 1);
-		cptr = (char*) malloc(len);
+		/* filter out some arguments added by XCode */
+		
+		if ([str isEqualToString:@"YES"])
+			continue;
+		
+		if ([str isEqualToString:@"-NSDocumentRevisionsDebugMode"])
+			continue;
+		
+		length = (int) ([str length] + 1);
+		cptr = (char*) malloc(length);
 		strcpy(cptr, [str UTF8String]);
 		argv[i++] = cptr;
 	}
 	
+	argc = i;
+	
 	status = freerdp_client_settings_parse_command_line(context->settings, argc, argv);
-
-	if (context->argc && context->argv)
-		status = freerdp_client_settings_command_line_status_print(context->settings, status, context->argc, context->argv);
-	else
-	{
-		freerdp_client_print_command_line_help(argc, argv);
-	}
+	
+	status = freerdp_client_settings_command_line_status_print(context->settings, status, argc, argv);
 
 	return status;
 }

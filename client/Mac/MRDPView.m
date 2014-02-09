@@ -77,9 +77,7 @@ void mf_Pointer_Free(rdpContext* context, rdpPointer* pointer);
 void mf_Pointer_Set(rdpContext* context, rdpPointer* pointer);
 void mf_Pointer_SetNull(rdpContext* context);
 void mf_Pointer_SetDefault(rdpContext* context);
-// int rdp_connect(void);
-void mac_set_bounds(rdpContext* context, rdpBounds* bounds);
-void mac_bitmap_update(rdpContext* context, BITMAP_UPDATE* bitmap);
+
 void mac_begin_paint(rdpContext* context);
 void mac_end_paint(rdpContext* context);
 void mac_save_state_info(freerdp* instance, rdpContext* context);
@@ -740,16 +738,20 @@ DWORD fixKeyCode(DWORD keyCode, unichar keyChar)
 {
 	if (!context)
 		return;
-
+	
 	if (self->bitmap_context)
 	{
 		CGContextRef cgContext = [[NSGraphicsContext currentContext] graphicsPort];
 		CGImageRef cgImage = CGBitmapContextCreateImage(self->bitmap_context);
-
+		
+		CGContextSaveGState(cgContext);
+		
 		CGContextClipToRect(cgContext, CGRectMake(rect.origin.x, rect.origin.y, rect.size.width, rect.size.height));
-		CGContextDrawImage(cgContext, CGRectMake(0,
-							 0, [self bounds].size.width, [self bounds].size.height), cgImage);
 
+		CGContextDrawImage(cgContext, CGRectMake(0, 0, [self bounds].size.width, [self bounds].size.height), cgImage);
+		
+		CGContextRestoreGState(cgContext);
+		
 		CGImageRelease(cgImage);
 	}
 	else
@@ -810,11 +812,8 @@ BOOL mac_pre_connect(freerdp* instance)
 {
 	rdpSettings* settings;
 
-	// setup callbacks
 	instance->update->BeginPaint = mac_begin_paint;
 	instance->update->EndPaint = mac_end_paint;
-	instance->update->SetBounds = mac_set_bounds;
-	//instance->update->BitmapUpdate = mac_bitmap_update;
 
 	settings = instance->settings;
 
@@ -825,7 +824,6 @@ BOOL mac_pre_connect(freerdp* instance)
 		return -1;
 	}
 
-	settings->ColorDepth = 32;
 	settings->SoftwareGdi = TRUE;
 
 	settings->OsMajorType = OSMAJORTYPE_MACINTOSH;
@@ -852,8 +850,8 @@ BOOL mac_pre_connect(freerdp* instance)
 	settings->OrderSupport[NEG_GLYPH_INDEX_INDEX] = TRUE;
 	settings->OrderSupport[NEG_FAST_INDEX_INDEX] = TRUE;
 	settings->OrderSupport[NEG_FAST_GLYPH_INDEX] = TRUE;
-	settings->OrderSupport[NEG_POLYGON_SC_INDEX] = (settings->SoftwareGdi) ? FALSE : TRUE;
-	settings->OrderSupport[NEG_POLYGON_CB_INDEX] = (settings->SoftwareGdi) ? FALSE : TRUE;
+	settings->OrderSupport[NEG_POLYGON_SC_INDEX] = FALSE;
+	settings->OrderSupport[NEG_POLYGON_CB_INDEX] = FALSE;
 	settings->OrderSupport[NEG_ELLIPSE_SC_INDEX] = FALSE;
 	settings->OrderSupport[NEG_ELLIPSE_CB_INDEX] = FALSE;
 
@@ -877,9 +875,11 @@ BOOL mac_pre_connect(freerdp* instance)
 
 BOOL mac_post_connect(freerdp* instance)
 {
+	rdpGdi* gdi;
 	UINT32 flags;
+	rdpSettings* settings;
 	rdpPointer rdp_pointer;
-	mfContext *mfc = (mfContext*) instance->context;
+	mfContext* mfc = (mfContext*) instance->context;
 
 	MRDPView* view = (MRDPView*) mfc->view;
 
@@ -891,13 +891,35 @@ BOOL mac_post_connect(freerdp* instance)
 	rdp_pointer.SetNull = mf_Pointer_SetNull;
 	rdp_pointer.SetDefault = mf_Pointer_SetDefault;
 
-	flags = CLRBUF_32BPP | CLRCONV_ALPHA;
+	settings = instance->settings;
+	
+	flags = CLRCONV_ALPHA | CLRCONV_RGB555;
+	
+	if (settings->ColorDepth > 16)
+		flags |= CLRBUF_32BPP;
+	else
+		flags |= CLRBUF_16BPP;
+	
 	gdi_init(instance, flags, NULL);
-
-	rdpGdi* gdi = instance->context->gdi;
+	gdi = instance->context->gdi;
+	
 	CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-	view->bitmap_context = CGBitmapContextCreate(gdi->primary_buffer, gdi->width, gdi->height, 8, gdi->width * 4, colorSpace, kCGBitmapByteOrder32Little | kCGImageAlphaNoneSkipFirst);
-
+	
+	if (gdi->dstBpp == 16)
+	{
+		view->bitmap_context = CGBitmapContextCreate(gdi->primary_buffer,
+			gdi->width, gdi->height, 5, gdi->width * 2, colorSpace,
+			kCGBitmapByteOrder16Little | kCGImageAlphaNoneSkipFirst);
+	}
+	else
+	{
+		view->bitmap_context = CGBitmapContextCreate(gdi->primary_buffer,
+			gdi->width, gdi->height, 8, gdi->width * 4, colorSpace,
+			kCGBitmapByteOrder32Little | kCGImageAlphaNoneSkipFirst);
+	}
+	
+	CGColorSpaceRelease(colorSpace);
+	
 	pointer_cache_register_callbacks(instance->update);
 	graphics_register_pointer(instance->context->graphics, &rdp_pointer);
 
@@ -978,7 +1000,7 @@ void mf_Pointer_New(rdpContext* context, rdpPointer* pointer)
 
 	freerdp_alpha_cursor_convert(cursor_data, pointer->xorMaskData, pointer->andMaskData,
 				     pointer->width, pointer->height, pointer->xorBpp, context->gdi->clrconv);
-
+	
 	/* store cursor bitmap image in representation - required by NSImage */
 	bmiRep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:(unsigned char **) &cursor_data
 											pixelsWide:rect.size.width
@@ -1077,24 +1099,6 @@ void mf_Pointer_SetDefault(rdpContext* context)
 	mfContext* mfc = (mfContext*) context;
 	MRDPView* view = (MRDPView*) mfc->view;
 	[view setCursor:[NSCursor arrowCursor]];
-}
-
-/** *********************************************************************
- * clip drawing surface so nothing is drawn outside specified bounds
- ***********************************************************************/
-
-void mac_set_bounds(rdpContext* context, rdpBounds* bounds)
-{
-	
-}
-
-/** *********************************************************************
- * we don't do much over here
- ***********************************************************************/
-
-void mac_bitmap_update(rdpContext* context, BITMAP_UPDATE* bitmap)
-{
-	
 }
 
 /** *********************************************************************
