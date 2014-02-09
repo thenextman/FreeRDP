@@ -74,13 +74,11 @@ void mac_set_view_size(rdpContext* context, MRDPView* view);
 	int length;
 	int status;
 	char* cptr;
-	int argc;
-	char** argv = nil;
 
 	NSArray* args = [[NSProcessInfo processInfo] arguments];
 
-	argc = (int) [args count];
-	argv = malloc(sizeof(char*) * argc);
+	context->argc = (int) [args count];
+	context->argv = malloc(sizeof(char*) * context->argc);
 	
 	i = 0;
 	
@@ -97,14 +95,14 @@ void mac_set_view_size(rdpContext* context, MRDPView* view);
 		length = (int) ([str length] + 1);
 		cptr = (char*) malloc(length);
 		strcpy(cptr, [str UTF8String]);
-		argv[i++] = cptr;
+		context->argv[i++] = cptr;
 	}
 	
-	argc = i;
+	context->argc = i;
 	
-	status = freerdp_client_settings_parse_command_line(context->settings, argc, argv);
+	status = freerdp_client_settings_parse_command_line(context->settings, context->argc, context->argv);
 	
-	status = freerdp_client_settings_command_line_status_print(context->settings, status, argc, argv);
+	status = freerdp_client_settings_command_line_status_print(context->settings, status, context->argc, context->argv);
 
 	return status;
 }

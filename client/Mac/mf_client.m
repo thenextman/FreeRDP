@@ -136,7 +136,6 @@ void freerdp_client_mouse_event(rdpContext* cfc, DWORD flags, int x, int y)
 	input->MouseEvent(input, flags, x, y);
 }
 
-
 void mf_scale_mouse_event(void* context, rdpInput* input, UINT16 flags, UINT16 x, UINT16 y)
 {
 	mfContext* mfc = (mfContext*) context;
