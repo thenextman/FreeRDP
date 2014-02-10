@@ -53,8 +53,11 @@ struct rdp_credssp
 	CryptoRc4 rc4_seal_state;
 	LPTSTR ServicePrincipalName;
 	SEC_WINNT_AUTH_IDENTITY identity;
+	//SEC_WINNT_AUTH_IDENTITY_EX identity;
+	LPTSTR providerName;
 	PSecurityFunctionTable table;
 	SecPkgContext_Sizes ContextSizes;
+	int cbSignature;
 };
 
 int credssp_authenticate(rdpCredssp* credssp);

@@ -39,8 +39,63 @@
 #include <freerdp/channels/channels.h>
 
 #include "resource.h"
+#include <strsafe.h>
 
 #include "wf_interface.h"
+
+#ifdef WIN32
+#include <conio.h>
+#endif
+
+#ifdef WITH_WINSCARD
+#pragma comment(lib,"winscard")
+#endif
+
+#ifdef HAVE__GETCH
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+#ifdef HAVE_TERMIOS_H
+#include <termios.h>
+#endif
+
+int _getch(unsigned char echo)
+{
+	struct termios savedState, newState;
+	int c;
+
+	if (-1 == tcgetattr(STDIN_FILENO, &savedState))
+	{
+		return EOF;     /* error on tcgetattr */
+	}
+
+	newState = savedState;
+
+	if ((echo = !echo)) /* yes i'm doing an assignment in an if clause */
+	{
+		echo = ECHO;    /* echo bit to disable echo */
+	}
+
+	/* disable canonical input and disable echo.  set minimal input to 1. */
+	newState.c_lflag &= ~(echo | ICANON);
+	newState.c_cc[VMIN] = 1;
+
+	if (-1 == tcsetattr(STDIN_FILENO, TCSANOW, &newState))
+	{
+		return EOF;     /* error on tcsetattr */
+	}
+
+	c = getchar();      /* block (withot spinning) until we get a keypress */
+
+	/* restore the saved state */
+	if (-1 == tcsetattr(STDIN_FILENO, TCSANOW, &savedState))
+	{
+		return EOF;     /* error on tcsetattr */
+	}
+
+	return c;
+}
+#endif
 
 INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
@@ -52,6 +107,11 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	rdpContext* context;
 	rdpSettings* settings;
 	RDP_CLIENT_ENTRY_POINTS clientEntryPoints;
+	DWORD dwResult;
+
+#if defined(WIN32) && defined(WITH_DEBUG)
+	gLogMutex = CreateMutex(NULL, FALSE, NULL);
+#endif
 
 	ZeroMemory(&clientEntryPoints, sizeof(RDP_CLIENT_ENTRY_POINTS));
 	clientEntryPoints.Size = sizeof(RDP_CLIENT_ENTRY_POINTS);
@@ -77,6 +137,7 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	if (status)
 	{
 		freerdp_client_context_free(context);
+		_getch();
 		return 0;
 	}
 

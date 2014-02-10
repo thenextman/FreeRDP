@@ -25,9 +25,13 @@
 #cmakedefine HAVE_TM_GMTOFF
 #cmakedefine HAVE_AIO_H
 #cmakedefine HAVE_PTHREAD_GNU_EXT
+#cmakedefine HAVE_TERMIOS_H
 
+/* Functions */
+#cmakedefine HAS__GETCH
 
 /* Options */
+#cmakedefine WITH_DEBUG
 #cmakedefine WITH_PROFILER
 #cmakedefine WITH_GPROF
 #cmakedefine WITH_SSE2
@@ -45,6 +49,8 @@
 #cmakedefine WITH_IOSAUDIO
 #cmakedefine WITH_OPENSLES
 #cmakedefine WITH_GSM
+#cmakedefine WITH_PCSC
+#cmakedefine WITH_WINSCARD
 
 /* Plugins */
 #cmakedefine STATIC_CHANNELS

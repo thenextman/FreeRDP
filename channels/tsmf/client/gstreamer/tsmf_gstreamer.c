@@ -984,7 +984,9 @@ static BOOL tsmf_gstreamer_pipeline_build(TSMFGstreamerDecoder * mdecoder)
 			DEBUG_DVC("tsmf_gstreamer_pipeline_build: building Video Pipe");
 
 			if (mdecoder->xfwin == (int *) -1)
+			{
 				DEBUG_WARN("tsmf_gstreamer_entry: failed to assign pointer to the memory address - shmat()");
+			}
 			else
 			{
 				if (!mdecoder->disp)

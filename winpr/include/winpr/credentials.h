@@ -23,6 +23,10 @@
 #include <winpr/winpr.h>
 #include <winpr/wtypes.h>
 
+#ifdef _WIN32
+#include <wincred.h>
+#endif
+
 #ifndef _WIN32
 
 #define CRED_SESSION_WILDCARD_NAME_W			L"*Session"
