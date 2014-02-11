@@ -233,7 +233,6 @@ static void smartcard_irp_complete(IRP* irp)
 	 */
 
 	DEBUG_SCARD("DeviceId %d FileId %d CompletionId %d", irp->device->id, irp->FileId, irp->CompletionId);
-	DEBUG_SCARD("DeviceId %d FileId %d CompletionId %d", irp->device->id, irp->FileId, irp->CompletionId);
 
 	pos = Stream_GetPosition(irp->output);
 	Stream_SetPosition(irp->output, 12);
@@ -272,21 +271,12 @@ static void smartcard_irp_complete(IRP* irp)
 			DEBUG_SCARD("%s\n", buffer);
 		}
 #endif
-		irp->Complete(irp);
 	} else {
 		DEBUG_SCARD("Duplicate IRP: DeviceId %d FileId %d CompletionId %d", irp->device->id, irp->FileId, irp->CompletionId);
+		WLog_Print(irp->device->log, WLOG_WARN,"Duplicate IRP: DeviceId %d FileId %d CompletionId %d", irp->device->id, irp->FileId, irp->CompletionId); 
 	}
 
 	/* End TS Client defect workaround. */
-
-	/* irp_free(irp); 	The "irp_free()" function is statically-declared
-	 * 			and so is not available to be called
-	 * 			here.  Instead, call it indirectly by calling
-	 * 			the IRP's "Discard()" function,
-	 * 			which has already been assigned 
-	 * 			to point to "irp_free()" in "irp_new()".
-	 */
-	irp->Discard(irp);
 }
 /* End TS Client defect workaround. */
 
@@ -307,8 +297,8 @@ static void smartcard_irp_request(DEVICE* device, IRP* irp)
 	list_enqueue(smartcard->CompletionIds, CompletionIdInfo);
 	ReleaseMutex(smartcard->CompletionIdsMutex);
 
-	/* Overwrite the previous assignment made in irp_new() */
-	irp->Complete = smartcard_irp_complete;
+	/* Set the completion routine since we need to add information to the stream for smartcard rdr */
+	irp->CompletionRoutine = smartcard_irp_complete;
 
 	/* End TS Client defect workaround. */
 
@@ -350,7 +340,6 @@ int DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints)
 	name = device->Name;
 	path = device->Path;
 
-	DEBUG_SCARD(" ");
 	/* TODO: check if server supports sc redirect (version 5.1) */
 	smartcard = (SMARTCARD_DEVICE*) malloc(sizeof(SMARTCARD_DEVICE));
 	ZeroMemory(smartcard, sizeof(SMARTCARD_DEVICE));

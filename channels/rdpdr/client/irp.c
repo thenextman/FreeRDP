@@ -45,6 +45,11 @@ static void irp_complete(IRP* irp)
 {
 	int pos;
 
+	if (irp->CompletionRoutine)
+	{
+		irp->CompletionRoutine(irp);
+	}
+
 	pos = (int) Stream_GetPosition(irp->output);
 	Stream_SetPosition(irp->output, 12);
 	Stream_Write_UINT32(irp->output, irp->IoStatus);
