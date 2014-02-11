@@ -342,6 +342,7 @@ struct _IRP
 	wStream* output;
 
 	pcIRPResponse Complete;
+	pcIRPResponse CompletionRoutine;
 	pcIRPResponse Discard;
 };
 
