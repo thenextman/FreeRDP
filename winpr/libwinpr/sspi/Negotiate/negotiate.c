@@ -180,11 +180,15 @@ SECURITY_STATUS SEC_ENTRY negotiate_FreeCredentialsHandle(PCredHandle phCredenti
 
 SECURITY_STATUS SEC_ENTRY negotiate_EncryptMessage(PCtxtHandle phContext, ULONG fQOP, PSecBufferDesc pMessage, ULONG MessageSeqNo)
 {
+	fprintf(stderr, "%s:%d Not Implemented\n", __FUNCTION__, __LINE__);
+
 	return SEC_E_OK;
 }
 
 SECURITY_STATUS SEC_ENTRY negotiate_DecryptMessage(PCtxtHandle phContext, PSecBufferDesc pMessage, ULONG MessageSeqNo, ULONG* pfQOP)
 {
+	fprintf(stderr, "%s:%d Not Implemented\n", __FUNCTION__, __LINE__);
+
 	return SEC_E_OK;
 }
 

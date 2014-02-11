@@ -183,7 +183,9 @@ BOOL license_send(rdpLicense* license, wStream* s, BYTE type)
 	UINT16 wMsgSize;
 	UINT16 sec_flags;
 
+#ifdef WITH_DEBUG_LICENSE
 	DEBUG_LICENSE("Sending %s Packet", LICENSE_MESSAGE_STRINGS[type & 0x1F]);
+#endif
 
 	length = Stream_GetPosition(s);
 	Stream_SetPosition(s, 0);

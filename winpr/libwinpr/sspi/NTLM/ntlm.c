@@ -694,6 +694,8 @@ SECURITY_STATUS SEC_ENTRY ntlm_EncryptMessage(PCtxtHandle phContext, ULONG fQOP,
 	CopyMemory(&signature[12], (void*) &(SeqNo), 4);
 	context->SendSeqNum++;
 
+	signature_buffer->cbBuffer = 16;
+
 #ifdef WITH_DEBUG_NTLM
 	fprintf(stderr, "Signature (length = %d)\n", (int) signature_buffer->cbBuffer);
 	winpr_HexDump(signature_buffer->pvBuffer, signature_buffer->cbBuffer);

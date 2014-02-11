@@ -28,6 +28,7 @@
 #include <string.h>
 
 #include <winpr/crt.h>
+#include <winpr/print.h>
 
 #include <freerdp/utils/list.h>
 #include <freerdp/utils/debug.h>
@@ -35,6 +36,8 @@
 #include <freerdp/channels/rdpdr.h>
 
 #include "smartcard_main.h"
+
+extern const char* ioctlToName(UINT ioctl_code);
 
 static void smartcard_free(DEVICE* dev)
 {
@@ -73,6 +76,7 @@ static void smartcard_process_irp(SMARTCARD_DEVICE* smartcard, IRP* irp)
 	switch (irp->MajorFunction)
 	{
 		case IRP_MJ_DEVICE_CONTROL:
+			//DEBUG_SCARD("irp->MajorFunction: %#x\n", irp->MajorFunction);
 			smartcard_device_control(smartcard, irp);
 			break;
 
@@ -229,11 +233,14 @@ static void smartcard_irp_complete(IRP* irp)
 	 */
 
 	DEBUG_SCARD("DeviceId %d FileId %d CompletionId %d", irp->device->id, irp->FileId, irp->CompletionId);
+	DEBUG_SCARD("DeviceId %d FileId %d CompletionId %d", irp->device->id, irp->FileId, irp->CompletionId);
 
 	pos = Stream_GetPosition(irp->output);
 	Stream_SetPosition(irp->output, 12);
 	Stream_Write_UINT32(irp->output, irp->IoStatus);
 	Stream_SetPosition(irp->output, pos);
+
+	DEBUG_SCARD("irp->IoStatus: %#x", irp->IoStatus);
 
 	/* Begin TS Client defect workaround. */
 	WaitForSingleObject(smartcard->CompletionIdsMutex, INFINITE);
@@ -245,7 +252,29 @@ static void smartcard_irp_complete(IRP* irp)
 
 	if (!duplicate)
 	{
+#ifdef WITH_DEBUG_SCARD
+		{
+			char buffer[4096] = {0x20};
+			static const int bufferSize = ARRAYSIZE(buffer);
+			int x = 0;
+			UINT32 ioctlcode;
+			int pos;
+
+			pos = Stream_GetPosition(irp->input);
+			Stream_SetPosition(irp->input, 32);
+			Stream_Read_UINT32(irp->input, ioctlcode);
+			Stream_SetPosition(irp->input, pos);
+
+			x += _snprintf(&buffer[x], bufferSize, "\nInput: (%#x) %s Sending IRP: DeviceId %d FileId %d CompletionId %d\n", ioctlcode, ioctlToName(ioctlcode), irp->device->id, irp->FileId, irp->CompletionId);
+			x += winpr_HexDumpToBuffer(&buffer[x], bufferSize-x, Stream_Buffer(irp->input), Stream_Length(irp->input));
+			x += _snprintf(&buffer[x], bufferSize-x, "Output: (%#x) %s Sending IRP: DeviceId %d FileId %d CompletionId %d\n", ioctlcode, ioctlToName(ioctlcode), irp->device->id, irp->FileId, irp->CompletionId);
+			x += winpr_HexDumpToBuffer(&buffer[x], bufferSize-x, Stream_Buffer(irp->output), Stream_GetPosition(irp->output));
+			DEBUG_SCARD("%s\n", buffer);
+		}
+#endif
 		irp->Complete(irp);
+	} else {
+		DEBUG_SCARD("Duplicate IRP: DeviceId %d FileId %d CompletionId %d", irp->device->id, irp->FileId, irp->CompletionId);
 	}
 
 	/* End TS Client defect workaround. */
@@ -286,7 +315,7 @@ static void smartcard_irp_request(DEVICE* device, IRP* irp)
 	if ((irp->MajorFunction == IRP_MJ_DEVICE_CONTROL) && smartcard_async_op(irp))
 	{
 		/* certain potentially long running operations get their own thread */
-		SMARTCARD_IRP_WORKER* irpWorker = malloc(sizeof(SMARTCARD_IRP_WORKER));
+		SMARTCARD_IRP_WORKER* irpWorker = (SMARTCARD_IRP_WORKER*)malloc(sizeof(SMARTCARD_IRP_WORKER));
 
 		irpWorker->thread = CreateThread(NULL, 0,
 				(LPTHREAD_START_ROUTINE) smartcard_process_irp_thread_func,
@@ -313,7 +342,7 @@ int DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints)
 {
 	char* name;
 	char* path;
-	int i, length, ck;
+	int length, ck;
 	RDPDR_SMARTCARD* device;
 	SMARTCARD_DEVICE* smartcard;
 
@@ -321,6 +350,7 @@ int DeviceServiceEntry(PDEVICE_SERVICE_ENTRY_POINTS pEntryPoints)
 	name = device->Name;
 	path = device->Path;
 
+	DEBUG_SCARD(" ");
 	/* TODO: check if server supports sc redirect (version 5.1) */
 	smartcard = (SMARTCARD_DEVICE*) malloc(sizeof(SMARTCARD_DEVICE));
 	ZeroMemory(smartcard, sizeof(SMARTCARD_DEVICE));

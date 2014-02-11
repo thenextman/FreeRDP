@@ -659,8 +659,9 @@ int transport_read(rdpTransport* transport, wStream* s)
 	/* dump when whole PDU is read */
 	if (position + status >= pduLength)
 	{
-		fprintf(stderr, "Local < Remote\n");
+		fprintf(stderr, "Local < Remote : Bytes %d (%#x)\n", pduLength, pduLength);
 		winpr_HexDump(Stream_Buffer(s), pduLength);
+		fflush(stderr);
 	}
 #endif
 
@@ -699,8 +700,9 @@ int transport_write(rdpTransport* transport, wStream* s)
 #ifdef WITH_DEBUG_TRANSPORT
 	if (length > 0)
 	{
-		fprintf(stderr, "Local > Remote\n");
+		fprintf(stderr, "Local > Remote : Bytes %d (%#x)\n", length, length);
 		winpr_HexDump(Stream_Buffer(s), length);
+		fflush(stderr);
 	}
 #endif
 

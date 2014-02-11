@@ -33,14 +33,51 @@
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
 
+#include <freerdp/utils/debug.h>
+
 static const char certificate_store_dir[] = "certs";
 static const char certificate_server_dir[] = "server";
 static const char certificate_known_hosts_file[] = "known_hosts";
 
 #include <freerdp/crypto/certificate.h>
 
+DWORD MakeDirectory(char* path)
+{
+#ifndef WIN32
+	/* Non win32 winpr handles recursize directory creation */
+	return CreateDirectoryA(path, 0);
+#else
+	DWORD status;
+	char dir[MAX_PATH] = {0};
+
+	
+	char* token = strstr(path, "\\");
+	if (token) {
+		do {
+			strncpy(dir, path, token-path);
+			if (dir[1] != ':' && dir[2] != 0x00 && ! PathFileExistsA(dir)) {
+				status = CreateDirectoryA(dir, 0);
+				if (! status) {
+					return status;
+				}
+			}
+		} while ((token=strstr(token+1, "\\")));
+	}
+
+	if (! PathFileExistsA(path)) {
+		status = CreateDirectoryA(path, 0);
+		if (! status) {
+			return status;
+		}
+	}
+
+	return ERROR_SUCCESS;
+#endif
+}
+
 void certificate_store_init(rdpCertificateStore* certificate_store)
 {
+	DWORD status;
 	char* server_path;
 	rdpSettings* settings;
 
@@ -48,7 +85,12 @@ void certificate_store_init(rdpCertificateStore* certificate_store)
 
 	if (!PathFileExistsA(settings->ConfigPath))
 	{
-		CreateDirectoryA(settings->ConfigPath, 0);
+		status = MakeDirectory(settings->ConfigPath);
+		if (! status) {
+			DEBUG_ERROR("Failed to create configuration directory %s. Error: %#lx", settings->ConfigPath, status);
+			return;
+		}
+
 		fprintf(stderr, "creating directory %s\n", settings->ConfigPath);
 	}
 
@@ -56,7 +98,11 @@ void certificate_store_init(rdpCertificateStore* certificate_store)
 
 	if (!PathFileExistsA(certificate_store->path))
 	{
-		CreateDirectoryA(certificate_store->path, 0);
+		status = MakeDirectory(certificate_store->path);
+		if (! status) {
+			DEBUG_ERROR("Failed to create certificate store path %s. Error: %#lx", certificate_store->path, status);
+			return;
+		}
 		fprintf(stderr, "creating directory %s\n", certificate_store->path);
 	}
 
@@ -64,7 +110,11 @@ void certificate_store_init(rdpCertificateStore* certificate_store)
 
 	if (!PathFileExistsA(server_path))
 	{
-		CreateDirectoryA(server_path, 0);
+		status = MakeDirectory(server_path);
+		if (! status) {
+			DEBUG_ERROR("Failed to create server path %s. Error: %#lx", server_path, status);
+			return;
+		}
 		fprintf(stderr, "creating directory %s\n", server_path);
 	}
 

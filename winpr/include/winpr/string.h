@@ -48,6 +48,8 @@ extern "C" {
 #define MB_USEGLYPHCHARS		0x00000004
 #define MB_ERR_INVALID_CHARS		0x00000008
 
+#define _snprintf snprintf
+
 WINPR_API char* _strdup(const char* strSource);
 WINPR_API WCHAR* _wcsdup(const WCHAR* strSource);
 
