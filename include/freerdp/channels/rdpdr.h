@@ -273,9 +273,10 @@ enum FSCTL_STRUCTURE
 
 #ifndef FILE_DEVICE_DISK
 #define FILE_DEVICE_DISK	0x00000007
+#endif
 #else
 #include <winioctl.h>
-#endif
+#endif //_WIN32
 
 /* [MS-FSCC] FileFsDeviceInformation.Characteristics */
 enum FILE_FS_DEVICE_FLAG

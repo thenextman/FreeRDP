@@ -252,7 +252,6 @@ static void smartcard_irp_complete(IRP* irp)
 
 	if (!duplicate)
 	{
-		irp->Complete(irp);
 #ifdef WITH_DEBUG_SCARD
 		{
 			char buffer[4096] = {0x20};
@@ -273,6 +272,7 @@ static void smartcard_irp_complete(IRP* irp)
 			DEBUG_SCARD("%s\n", buffer);
 		}
 #endif
+		irp->Complete(irp);
 	} else {
 		DEBUG_SCARD("Duplicate IRP: DeviceId %d FileId %d CompletionId %d", irp->device->id, irp->FileId, irp->CompletionId);
 	}

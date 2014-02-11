@@ -24,8 +24,8 @@
 #include "config.h"
 #endif
 
-#ifdef WITH_DEBUG
 #define DEBUG_NULL(fmt, ...) do { } while (0)
+#ifdef WITH_DEBUG
 
 /* When building for android redirect all debug messages
  * to logcat. */
@@ -73,6 +73,7 @@ HANDLE gLogMutex;
 		fflush(stderr); \
 	} while( 0 );
 #endif // WIN32
+#endif // ANDROID
 #endif // WITH_DEBUG
 
 #define DEBUG_CLASS(_dbg_class, fmt, ...) DEBUG_PRINT("DBG_" #_dbg_class " %s (%s:%d): ", fmt, ## __VA_ARGS__)
