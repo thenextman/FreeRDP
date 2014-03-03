@@ -223,8 +223,11 @@ DWORD mac_client_thread(void* param)
 	{
 		int status;
 		HANDLE events[4];
+		HANDLE inputEvent;
 		HANDLE inputThread;
+		HANDLE updateEvent;
 		HANDLE updateThread;
+		HANDLE channelsEvent;
 		HANDLE channelsThread;
 		
 		DWORD nCount;
@@ -252,15 +255,27 @@ DWORD mac_client_thread(void* param)
 		{
 			updateThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) mac_client_update_thread, context, 0, NULL);
 		}
+		else
+		{
+			events[nCount++] = updateEvent = freerdp_get_message_queue_event_handle(instance, FREERDP_UPDATE_MESSAGE_QUEUE);
+		}
 		
 		if (settings->AsyncInput)
 		{
 			inputThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) mac_client_input_thread, context, 0, NULL);
 		}
+		else
+		{
+			events[nCount++] = inputEvent = freerdp_get_message_queue_event_handle(instance, FREERDP_INPUT_MESSAGE_QUEUE);
+		}
 		
 		if (settings->AsyncChannels)
 		{
 			channelsThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) mac_client_channels_thread, context, 0, NULL);
+		}
+		else
+		{
+			events[nCount++] = channelsEvent = freerdp_channels_get_event_handle(instance);
 		}
 		
 		while (1)
@@ -271,6 +286,30 @@ DWORD mac_client_thread(void* param)
 			{
 				freerdp_disconnect(instance);
 				break;
+			}
+			
+			if (!settings->AsyncUpdate)
+			{
+				if (WaitForSingleObject(updateEvent, 0) == WAIT_OBJECT_0)
+				{
+					update_activity_cb(instance);
+				}
+			}
+			
+			if (!settings->AsyncInput)
+			{
+				if (WaitForSingleObject(inputEvent, 0) == WAIT_OBJECT_0)
+				{
+					input_activity_cb(instance);
+				}
+			}
+			
+			if (!settings->AsyncChannels)
+			{
+				if (WaitForSingleObject(channelsEvent, 0) == WAIT_OBJECT_0)
+				{
+					channel_activity_cb(instance);
+				}
 			}
 		}
 		
@@ -1126,6 +1165,31 @@ void mac_desktop_resize(rdpContext* context)
 	gdi_resize(context->gdi, mfc->width, mfc->height);
 	
 	view->bitmap_context = mac_create_bitmap_context(context);
+}
+
+static void update_activity_cb(freerdp* instance)
+{
+	int status;
+	wMessage message;
+	wMessageQueue* queue;
+	
+	status = 1;
+	queue = freerdp_get_message_queue(instance, FREERDP_UPDATE_MESSAGE_QUEUE);
+	
+	if (queue)
+	{
+		while (MessageQueue_Peek(queue, &message, TRUE))
+		{
+			status = freerdp_message_queue_process_message(instance, FREERDP_UPDATE_MESSAGE_QUEUE, &message);
+			
+			if (!status)
+				break;
+		}
+	}
+	else
+	{
+		fprintf(stderr, "update_activity_cb: No queue!\n");
+	}
 }
 
 static void input_activity_cb(freerdp* instance)
