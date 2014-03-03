@@ -25,6 +25,8 @@
 #import "mfreerdp.h"
 #import "mf_client.h"
 
+#import "MRDPViewDelegate.h"
+
 @interface MRDPView : NSView
 {
 	mfContext* mfc;
@@ -55,6 +57,9 @@
 	int pasteboard_changecount;
 	int pasteboard_format;
 	int is_connected;
+    BOOL usesAppleKeyboard;
+    
+    NSObject<MRDPViewDelegate> *delegate;
 }
 
 - (int)  rdpStart :(rdpContext*) rdp_context;
@@ -62,9 +67,13 @@
 - (void) setScrollOffset:(int)xOffset y:(int)yOffset w:(int)width h:(int)height;
 
 - (void) onPasteboardTimerFired :(NSTimer *) timer;
+- (void) pause;
+- (void) resume;
 - (void) releaseResources;
 
 @property (assign) int is_connected;
+@property (assign) BOOL usesAppleKeyboard;
+@property(nonatomic, assign) NSObject<MRDPViewDelegate> *delegate;
 
 @end
 
@@ -81,7 +90,8 @@
 BOOL mac_pre_connect(freerdp* instance);
 BOOL mac_post_connect(freerdp*	instance);
 BOOL mac_authenticate(freerdp* instance, char** username, char** password, char** domain);
-
+BOOL mac_verify_certificate(freerdp* instance, char* subject, char* issuer, char* fingerprint);
+int mac_verify_x509certificate(freerdp* instance, BYTE* data, int length, const char* hostname, int port, DWORD flags);
 DWORD mac_client_thread(void* param);
 
 #endif // MRDPVIEW_H

@@ -7,20 +7,22 @@
 //
 
 #import <Cocoa/Cocoa.h>
-#import <MacFreeRDP/MRDPView.h>
+#import <MacFreeRDP/MRDPViewController.h>
 #import <MacFreeRDP/mfreerdp.h>
+#import <MacFreeRDP/MRDPViewControllerDelegate.h>
 
-@interface AppDelegate : NSObject <NSApplicationDelegate>
+@interface AppDelegate : NSObject <NSApplicationDelegate, MRDPViewControllerDelegate>
 {
 @public
 	NSWindow* window;
-	rdpContext* context;
-	MRDPView* mrdpView;
+	MRDPViewController* mrdpViewController;
+    NSBox *connContainer;
 }
 
-- (void) rdpConnectError: (NSString*) customMessage;
-
 @property (assign) IBOutlet NSWindow *window;
-@property (assign) rdpContext *context;
+- (IBAction)start:(id)sender;
+- (IBAction)stop:(id)sender;
+@property (assign) IBOutlet NSBox *connContainer;
+- (IBAction)restart:(id)sender;
 
 @end

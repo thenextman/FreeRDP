@@ -24,6 +24,8 @@
 #import "MRDPView.h"
 #import "MRDPCursor.h"
 #import "PasswordDialog.h"
+#import "MRDPViewDelegate.h"
+#import "X509Certificate.h"
 
 #include <winpr/crt.h>
 #include <winpr/input.h>
@@ -31,6 +33,7 @@
 #include <winpr/sysinfo.h>
 
 #include <freerdp/constants.h>
+#include <freerdp/locale/keyboard.h>
 
 #import "freerdp/freerdp.h"
 #import "freerdp/types.h"
@@ -92,10 +95,11 @@ struct rgba_data
 @implementation MRDPView
 
 @synthesize is_connected;
+@synthesize usesAppleKeyboard;
+@synthesize delegate;
 
 - (int) rdpStart:(rdpContext*) rdp_context
 {
-	rdpSettings* settings;
 	EmbedWindowEventArgs e;
 
 	[self initializeView];
@@ -103,22 +107,12 @@ struct rgba_data
 	context = rdp_context;
 	mfc = (mfContext*) rdp_context;
 	instance = context->instance;
-	settings = context->settings;
 
 	EventArgsInit(&e, "mfreerdp");
 	e.embed = TRUE;
 	e.handle = (void*) self;
 	PubSub_OnEmbedWindow(context->pubSub, context, &e);
-
-	NSScreen* screen = [[NSScreen screens] objectAtIndex:0];
-	NSRect screenFrame = [screen frame];
-
-	if (instance->settings->Fullscreen)
-	{
-		instance->settings->DesktopWidth  = screenFrame.size.width;
-		instance->settings->DesktopHeight = screenFrame.size.height;
-	}
-
+    
 	mfc->client_height = instance->settings->DesktopHeight;
 	mfc->client_width = instance->settings->DesktopWidth;
 
@@ -238,7 +232,7 @@ DWORD mac_client_thread(void* param)
 		rdpSettings* settings = context->settings;
 		
 		status = freerdp_connect(context->instance);
-		
+        
 		if (!status)
 		{
 			[view setIs_connected:0];
@@ -347,6 +341,7 @@ DWORD mac_client_thread(void* param)
 	if (self)
 	{
 		// Initialization code here.
+        self.usesAppleKeyboard = true;
 	}
 	
 	return self;
@@ -359,20 +354,34 @@ DWORD mac_client_thread(void* param)
 
 - (void) initializeView
 {
-	if (!initialized)
-	{
-		cursors = [[NSMutableArray alloc] initWithCapacity:10];
+    if (!initialized)
+    {
+        cursors = [[NSMutableArray alloc] initWithCapacity:10];
 
-		// setup a mouse tracking area
-		NSTrackingArea * trackingArea = [[NSTrackingArea alloc] initWithRect:[self visibleRect] options:NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved | NSTrackingCursorUpdate | NSTrackingEnabledDuringMouseDrag | NSTrackingActiveWhenFirstResponder owner:self userInfo:nil];
+        // setup a mouse tracking area
+        NSTrackingArea * trackingArea = [[NSTrackingArea alloc] initWithRect:[self visibleRect] options:NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved | NSTrackingCursorUpdate | NSTrackingEnabledDuringMouseDrag | NSTrackingActiveWhenFirstResponder owner:self userInfo:nil];
+        [self addTrackingArea:trackingArea];
+        [trackingArea release];
+        
+        // Set the default cursor
+        currentCursor = [NSCursor arrowCursor];
 
-		[self addTrackingArea:trackingArea];
-
-		// Set the default cursor
-		currentCursor = [NSCursor arrowCursor];
-
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(applicationDidBecomeActive:)
+                                                     name:@"NSApplicationDidBecomeActiveNotification" object:nil];
+        
 		initialized = YES;
 	}
+}
+
+- (void)applicationDidBecomeActive:(NSNotification *)notification
+{
+    if(self->is_connected)
+    {
+        NSLog(@"Releasing meta key");
+        
+        freerdp_input_send_keyboard_event(instance->input, 256 | KBD_FLAGS_RELEASE, 0x005B);
+    }
 }
 
 - (void) setCursor: (NSCursor*) cursor
@@ -386,6 +395,58 @@ DWORD mac_client_thread(void* param)
 	[self addCursorRect:[self visibleRect] cursor:currentCursor];
 }
 
+/*************************************************************************************************************
+ * Support for SmartSizing in app
+ * We want the view to grow and shrink, but never get larger than the configured desktop size
+ * The implementation is not perfect because we only reconfigure the view once the resize is complete,
+ * not live
+ * However, I get a lot of weird bugs doing this live inside resizeWithOldSuperviewSize:(NSSize)oldBoundsSize
+ ************************************************************************************************************/
+- (void)viewDidEndLiveResize
+{
+    if(freerdp_get_param_bool(self->context->settings, FreeRDP_SmartSizing))
+    {
+        NSSize oldBoundsSize = self.superview.bounds.size;
+        
+        int newWidth = self.frame.size.width;
+        int newHeight = self.frame.size.height;
+        
+        if(oldBoundsSize.width > freerdp_get_param_uint32(self->context->settings, FreeRDP_DesktopWidth))
+        {
+            self.autoresizingMask = self.autoresizingMask & ~NSViewWidthSizable;
+            newWidth = freerdp_get_param_uint32(self->context->settings, FreeRDP_DesktopWidth);
+        }
+        else if(oldBoundsSize.width <= freerdp_get_param_uint32(self->context->settings, FreeRDP_DesktopWidth))
+        {
+            self.autoresizingMask = self.autoresizingMask |= NSViewWidthSizable;
+            newWidth = oldBoundsSize.width;
+        }
+        
+        if(oldBoundsSize.height > freerdp_get_param_uint32(self->context->settings, FreeRDP_DesktopHeight))
+        {
+            self.autoresizingMask = self.autoresizingMask & ~NSViewHeightSizable;
+            newHeight = freerdp_get_param_uint32(self->context->settings, FreeRDP_DesktopHeight);
+        }
+        else if(oldBoundsSize.height <= freerdp_get_param_uint32(self->context->settings, FreeRDP_DesktopHeight))
+        {
+            self.autoresizingMask = self.autoresizingMask |= NSViewHeightSizable;
+            newHeight = oldBoundsSize.height;
+        }
+        
+        [self setFrameSize:NSMakeSize(newWidth, newHeight)];
+        [self setFrameOrigin:NSMakePoint((oldBoundsSize.width - newWidth) / 2,
+                                         (oldBoundsSize.height - newHeight) / 2)];
+    }
+}
+
+- (void)resizeWithOldSuperviewSize:(NSSize)oldBoundsSize
+{
+    [super resizeWithOldSuperviewSize:oldBoundsSize];
+}
+
+/***********************************************************************
+ * become first responder so we can get keyboard and mouse events
+ ***********************************************************************/
 - (BOOL)acceptsFirstResponder
 {
 	return YES;
@@ -398,7 +459,8 @@ DWORD mac_client_thread(void* param)
 	if (!is_connected)
 		return;
 	
-	NSPoint loc = [event locationInWindow];
+    NSPoint loc = [self convertPoint:[event locationInWindow] fromView: nil];
+    
 	int x = (int) loc.x;
 	int y = (int) loc.y;
 
@@ -412,7 +474,7 @@ DWORD mac_client_thread(void* param)
 	if (!is_connected)
 		return;
 	
-	NSPoint loc = [event locationInWindow];
+    NSPoint loc = [self convertPoint:[event locationInWindow] fromView: nil];
 	int x = (int) loc.x;
 	int y = (int) loc.y;
 	
@@ -426,7 +488,7 @@ DWORD mac_client_thread(void* param)
 	if (!is_connected)
 		return;
 	
-	NSPoint loc = [event locationInWindow];
+    NSPoint loc = [self convertPoint:[event locationInWindow] fromView: nil];
 	int x = (int) loc.x;
 	int y = (int) loc.y;
 	
@@ -440,7 +502,7 @@ DWORD mac_client_thread(void* param)
 	if (!is_connected)
 		return;
 	
-	NSPoint loc = [event locationInWindow];
+    NSPoint loc = [self convertPoint:[event locationInWindow] fromView: nil];
 	int x = (int) loc.x;
 	int y = (int) loc.y;
 	
@@ -454,7 +516,7 @@ DWORD mac_client_thread(void* param)
 	if (!is_connected)
 		return;
 	
-	NSPoint loc = [event locationInWindow];
+    NSPoint loc = [self convertPoint:[event locationInWindow] fromView: nil];
 	int x = (int) loc.x;
 	int y = (int) loc.y;
 	
@@ -468,7 +530,7 @@ DWORD mac_client_thread(void* param)
 	if (!is_connected)
 		return;
 	
-	NSPoint loc = [event locationInWindow];
+    NSPoint loc = [self convertPoint:[event locationInWindow] fromView: nil];
 	int x = (int) loc.x;
 	int y = (int) loc.y;
 	
@@ -482,7 +544,7 @@ DWORD mac_client_thread(void* param)
 	if (!is_connected)
 		return;
 	
-	NSPoint loc = [event locationInWindow];
+    NSPoint loc = [self convertPoint:[event locationInWindow] fromView: nil];
 	int x = (int) loc.x;
 	int y = (int) loc.y;
 	
@@ -492,13 +554,13 @@ DWORD mac_client_thread(void* param)
 - (void) scrollWheel:(NSEvent *)event
 {
 	UINT16 flags;
-	
+
 	[super scrollWheel:event];
-	
+
 	if (!is_connected)
 		return;
 	
-	NSPoint loc = [event locationInWindow];
+    NSPoint loc = [self convertPoint:[event locationInWindow] fromView: nil];
 	int x = (int) loc.x;
 	int y = (int) loc.y;
 	
@@ -525,7 +587,7 @@ DWORD mac_client_thread(void* param)
 	if (!is_connected)
 		return;
 	
-	NSPoint loc = [event locationInWindow];
+    NSPoint loc = [self convertPoint:[event locationInWindow] fromView: nil];
 	int x = (int) loc.x;
 	int y = (int) loc.y;
 	
@@ -533,45 +595,43 @@ DWORD mac_client_thread(void* param)
 	mf_scale_mouse_event(context, instance->input, PTR_FLAGS_MOVE, x, y);
 }
 
-DWORD fixKeyCode(DWORD keyCode, unichar keyChar)
+DWORD fixKeyCode(DWORD keyCode, uint keyboardLayoutId)
 {
-	/**
-	 * In 99% of cases, the given key code is truly keyboard independent.
-	 * This function handles the remaining 1% of edge cases.
-	 *
-	 * Hungarian Keyboard: This is 'QWERTZ' and not 'QWERTY'.
-	 * The '0' key is on the left of the '1' key, where '~' is on a US keyboard.
-	 * A special 'i' letter key with acute is found on the right of the left shift key.
-	 * On the hungarian keyboard, the 'i' key is at the left of the 'Y' key
-	 * Some international keyboards have a corresponding key which would be at
-	 * the left of the 'Z' key when using a QWERTY layout.
-	 *
-	 * The Apple Hungarian keyboard sends inverted key codes for the '0' and 'i' keys.
-	 * When using the US keyboard layout, key codes are left as-is (inverted).
-	 * When using the Hungarian keyboard layout, key codes are swapped (non-inverted).
-	 * This means that when using the Hungarian keyboard layout with a US keyboard,
-	 * the keys corresponding to '0' and 'i' will effectively be inverted.
-	 *
-	 * To fix the '0' and 'i' key inversion, we use the corresponding output character
-	 * provided by OS X and check for a character to key code mismatch: for instance,
-	 * when the output character is '0' for the key code corresponding to the 'i' key.
-	 */
-	
-	switch (keyChar)
-	{
-		case '0':
-		case 0x00A7: /* section sign */
-			if (keyCode == APPLE_VK_ISO_Section)
-				keyCode = APPLE_VK_ANSI_Grave;
-			break;
-			
-		case 0x00ED: /* latin small letter i with acute */
-		case 0x00CD: /* latin capital letter i with acute */
-			if (keyCode == APPLE_VK_ANSI_Grave)
-				keyCode = APPLE_VK_ISO_Section;
-			break;
-	}
-	
+    /*
+     *
+     * Based on https://help.ubuntu.com/community/AppleKeyboard
+     * The key with code 10 and 50 are inverted when the keyboard is not english or invariant.
+     *
+     */
+    
+    switch(keyboardLayoutId)
+    {
+        case 0x0: // No keyboard layout selected
+        case 0x0000047F: // Invariant Keyboard
+        case KBD_US:
+        case KBD_CANADIAN_FRENCH: // Misnamed Keyboard for Canadian english
+        case 0x00000C09: // Australian English Keyboard
+        case 0x00002809: // Belize English Keyboard
+        case 0x00004009: // India English Keyboard
+        case KBD_IRISH:
+        case 0x00002009: // Jamaica English Keyboard
+        case 0x00001409: // New Zealand English Keyboard
+        case KBD_UNITED_KINGDOM:
+        case 0x00003409: // Philippines English Keyboard
+        case 0x00004809: // Singapore English Keyboard
+        case 0x00001C09: // South African English Keyboard
+        case 0x00002C09: // Trinidad English Keyboard
+        case 0x00003009: // Zimbabwe English Keyboard
+            break;
+            
+        default:
+            if (keyCode == APPLE_VK_ANSI_Grave)
+                keyCode = APPLE_VK_ISO_Section;
+            else if (keyCode == APPLE_VK_ISO_Section)
+                keyCode = APPLE_VK_ANSI_Grave;
+            break;
+    }
+    
 	return keyCode;
 }
 
@@ -583,19 +643,25 @@ DWORD fixKeyCode(DWORD keyCode, unichar keyChar)
 	DWORD scancode;
 	unichar keyChar;
 	NSString* characters;
+    NSUInteger modifierFlags;
+    bool releaseKey = false;
 	
 	if (!is_connected)
 		return;
 	
 	keyFlags = KBD_FLAGS_DOWN;
 	keyCode = [event keyCode];
+    modifierFlags = [event modifierFlags];
 	
 	characters = [event charactersIgnoringModifiers];
 	
 	if ([characters length] > 0)
 	{
 		keyChar = [characters characterAtIndex:0];
-		keyCode = fixKeyCode(keyCode, keyChar);
+        if(self->usesAppleKeyboard)
+        {
+            keyCode = fixKeyCode(keyCode, self->context->settings->KeyboardLayout);
+        }
 	}
 	
 	vkcode = GetVirtualKeyCodeFromKeycode(keyCode + 8, KEYCODE_TYPE_APPLE);
@@ -603,6 +669,15 @@ DWORD fixKeyCode(DWORD keyCode, unichar keyChar)
 	keyFlags |= (scancode & KBDEXT) ? KBDEXT : 0;
 	scancode &= 0xFF;
 	vkcode &= 0xFF;
+    
+    // For VK_A, VK_C, VK_V or VK_X
+    if ((vkcode == 0x43 || vkcode == 0x56 || vkcode == 0x41 || vkcode == 0x58) && modifierFlags & NSCommandKeyMask)
+    {
+        releaseKey = true;
+        freerdp_input_send_keyboard_event(context->input, KBD_FLAGS_RELEASE, 0x5B); /* VK_LWIN, RELEASE */
+        freerdp_input_send_keyboard_event(context->input, KBD_FLAGS_RELEASE, 0x5C); /* VK_RWIN, RELEASE */
+        freerdp_input_send_keyboard_event(context->input, KBD_FLAGS_DOWN, 0x1D); /* VK_LCONTROL, DOWN */
+    }
 	
 #if 0
 	fprintf(stderr, "keyDown: keyCode: 0x%04X scancode: 0x%04X vkcode: 0x%04X keyFlags: %d name: %s\n",
@@ -610,6 +685,12 @@ DWORD fixKeyCode(DWORD keyCode, unichar keyChar)
 #endif
 	
 	freerdp_input_send_keyboard_event(instance->input, keyFlags, scancode);
+    
+    if (releaseKey)
+    {
+        //For some reasons, keyUp isn't called when Command is held down.
+        freerdp_input_send_keyboard_event(context->input, KBD_FLAGS_RELEASE, 0x1D); /* VK_LCONTROL, RELEASE */
+    }
 }
 
 - (void) keyUp:(NSEvent *) event
@@ -632,7 +713,10 @@ DWORD fixKeyCode(DWORD keyCode, unichar keyChar)
 	if ([characters length] > 0)
 	{
 		keyChar = [characters characterAtIndex:0];
-		keyCode = fixKeyCode(keyCode, keyChar);
+		if(self->usesAppleKeyboard)
+        {
+            keyCode = fixKeyCode(keyCode, self->context->settings->KeyboardLayout);
+        }
 	}
 
 	vkcode = GetVirtualKeyCodeFromKeycode(keyCode + 8, KEYCODE_TYPE_APPLE);
@@ -671,7 +755,7 @@ DWORD fixKeyCode(DWORD keyCode, unichar keyChar)
 	vkcode &= 0xFF;
 
 #if 0
-	fprintf(stderr, "flagsChanged: key: 0x%04X scancode: 0x%04X vkcode: 0x%04X extended: %d name: %s modFlags: 0x%04X\n",
+	fprintf(stderr, "flagsChanged: key: 0x%04X scancode: 0x%04lX vkcode: 0x%04lX extended: %lu name: %s modFlags: 0x%04lX\n",
 	       key - 8, scancode, vkcode, keyFlags, GetVirtualKeyName(vkcode), modFlags);
 
 	if (modFlags & NSAlphaShiftKeyMask)
@@ -716,10 +800,13 @@ DWORD fixKeyCode(DWORD keyCode, unichar keyChar)
 	else if (!(modFlags & NSAlternateKeyMask) && (kbdModFlags & NSAlternateKeyMask))
 		freerdp_input_send_keyboard_event(instance->input, keyFlags | KBD_FLAGS_RELEASE, scancode);
 
-	if ((modFlags & NSCommandKeyMask) && !(kbdModFlags & NSCommandKeyMask))
-		freerdp_input_send_keyboard_event(instance->input, keyFlags | KBD_FLAGS_DOWN, scancode);
-	else if (!(modFlags & NSCommandKeyMask) && (kbdModFlags & NSCommandKeyMask))
-		freerdp_input_send_keyboard_event(instance->input, keyFlags | KBD_FLAGS_RELEASE, scancode);
+    if(context->settings->EnableWindowsKey)
+    {
+        if ((modFlags & NSCommandKeyMask) && !(kbdModFlags & NSCommandKeyMask))
+            freerdp_input_send_keyboard_event(instance->input, keyFlags | KBD_FLAGS_DOWN, scancode);
+        else if (!(modFlags & NSCommandKeyMask) && (kbdModFlags & NSCommandKeyMask))
+            freerdp_input_send_keyboard_event(instance->input, keyFlags | KBD_FLAGS_RELEASE, scancode);
+    }
 
 	if ((modFlags & NSNumericPadKeyMask) && !(kbdModFlags & NSNumericPadKeyMask))
 		freerdp_input_send_keyboard_event(instance->input, keyFlags | KBD_FLAGS_DOWN, scancode);
@@ -743,7 +830,11 @@ DWORD fixKeyCode(DWORD keyCode, unichar keyChar)
 		if (argv[i])
 			free(argv[i]);
 	}
+    
+    [self pause]; // Remove tracking areas and invalidate pasteboard timer
 	
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:@"NSApplicationDidBecomeActiveNotification" object:nil];
+    
 	if (!is_connected)
 		return;
 	
@@ -779,27 +870,55 @@ DWORD fixKeyCode(DWORD keyCode, unichar keyChar)
 	{
 		/* Fill the screen with black */
 		[[NSColor blackColor] set];
-		NSRectFill([self bounds]);
+		NSRectFill(rect);
 	}
 }
 
 - (void) onPasteboardTimerFired :(NSTimer*) timer
 {
 	int i;
-	NSArray* types;
+    NSArray* types;
 	
 	i = (int) [pasteboard_rd changeCount];
 	
 	if (i != pasteboard_changecount)
 	{
-		pasteboard_changecount = i;
-		types = [NSArray arrayWithObject:NSStringPboardType];
-		NSString *str = [pasteboard_rd availableTypeFromArray:types];
-		if (str != nil)
-		{
-			cliprdr_send_supported_format_list(instance);
-		}
+        types = [NSArray arrayWithObject:NSStringPboardType];
+        NSString *str = [pasteboard_rd availableTypeFromArray:types];
+        if (str != nil)
+        {
+            cliprdr_send_supported_format_list(instance);
+        }
 	}
+    
+    pasteboard_changecount = (int) [pasteboard_rd changeCount];
+}
+
+- (void) pause
+{
+    // Invalidate the timer on the thread it was created on
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self->pasteboard_timer invalidate];
+    });
+    
+    // Temporarily remove tracking areas, else we will crash if the mouse
+    // enters the view while restarting
+    NSArray *trackingAreas = self.trackingAreas;
+    for(NSTrackingArea *ta in trackingAreas)
+    {
+        [self removeTrackingArea:ta];
+    }
+}
+
+- (void)resume
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self->pasteboard_timer = [NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(onPasteboardTimerFired:) userInfo:nil repeats:YES];
+    });
+    
+    NSTrackingArea * trackingArea = [[NSTrackingArea alloc] initWithRect:[self visibleRect] options:NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved | NSTrackingCursorUpdate | NSTrackingEnabledDuringMouseDrag | NSTrackingActiveWhenFirstResponder owner:self userInfo:nil];
+    [self addTrackingArea:trackingArea];
+    [trackingArea release];
 }
 
 - (void) setScrollOffset:(int)xOffset y:(int)yOffset w:(int)width h:(int)height
@@ -823,7 +942,6 @@ BOOL mac_pre_connect(freerdp* instance)
 	if (!settings->ServerHostname)
 	{
 		fprintf(stderr, "error: server hostname was not specified with /v:<server>[:port]\n");
-		[NSApp terminate:nil];
 		return -1;
 	}
 
@@ -896,7 +1014,7 @@ BOOL mac_post_connect(freerdp* instance)
 	gdi = instance->context->gdi;
 	
 	view->bitmap_context = mac_create_bitmap_context(instance->context);
-	
+
 	pointer_cache_register_callbacks(instance->update);
 	graphics_register_pointer(instance->context->graphics, &rdp_pointer);
 
@@ -906,39 +1024,133 @@ BOOL mac_post_connect(freerdp* instance)
 	view->pasteboard_wr = [NSPasteboard generalPasteboard];
 	
 	/* setup pasteboard for read operations */
-	view->pasteboard_rd = [NSPasteboard generalPasteboard];
-	view->pasteboard_changecount = (int) [view->pasteboard_rd changeCount];
-	view->pasteboard_timer = [NSTimer scheduledTimerWithTimeInterval:0.5 target:mfc->view selector:@selector(onPasteboardTimerFired:) userInfo:nil repeats:YES];
+    dispatch_async(dispatch_get_main_queue(), ^{
+    	view->pasteboard_rd = [NSPasteboard generalPasteboard];
+        view->pasteboard_changecount = (int) [view->pasteboard_rd changeCount];
+        view->pasteboard_timer = [NSTimer scheduledTimerWithTimeInterval:0.5 target:view selector:@selector(onPasteboardTimerFired:) userInfo:nil repeats:YES];
+    });
 
 	return TRUE;
 }
 
 BOOL mac_authenticate(freerdp* instance, char** username, char** password, char** domain)
 {
-	PasswordDialog* dialog = [PasswordDialog new];
+    NSLog(@"mac_authenticate");
+    
+	mfContext *mfc = (mfContext *)instance->context;
+	MRDPView *view = (MRDPView*)mfc->view;
+    NSObject<MRDPViewDelegate> *delegate = view->delegate;
+    
+    NSString *hostName = [NSString stringWithCString:instance->settings->ServerHostname encoding:NSUTF8StringEncoding];
+    NSString *userName = nil;
+    NSString *userPass = nil;
+    NSString *userDomain = nil;
+    
+    if(*username)
+    {
+        userName = [NSString stringWithCString:*username encoding:NSUTF8StringEncoding];
+    }
+    
+    if(*password)
+    {
+        userPass = [NSString stringWithCString:*password encoding:NSUTF8StringEncoding];
+    }
+    
+    if(*domain)
+    {
+        userDomain = [NSString stringWithCString:*domain encoding:NSUTF8StringEncoding];
+    }
+    
+    ServerCredential *credential = [[ServerCredential alloc] initWithHostName:hostName
+                                                                       domain:userDomain
+                                                                     userName:userName
+                                                                  andPassword:userPass];
+    
+    if(delegate && [delegate respondsToSelector:@selector(provideServerCredentials:)])
+    {
+        if([delegate provideServerCredentials:&credential] == TRUE)
+        {
+            const char* submittedUsername = [credential.username cStringUsingEncoding:NSUTF8StringEncoding];
+            *username = malloc((strlen(submittedUsername) + 1) * sizeof(char));
+            strcpy(*username, submittedUsername);
+            
+            const char* submittedPassword = [credential.password cStringUsingEncoding:NSUTF8StringEncoding];
+            *password = malloc((strlen(submittedPassword) + 1) * sizeof(char));
+            strcpy(*password, submittedPassword);
+            
+            const char* submittedDomain = [credential.domain cStringUsingEncoding:NSUTF8StringEncoding];
+            *domain = malloc((strlen(submittedDomain) + 1) * sizeof(char));
+            strcpy(*domain, submittedDomain);
+        }
+    }
+    
+    [credential release];
 
-	dialog.serverHostname = [NSString stringWithCString:instance->settings->ServerHostname encoding:NSUTF8StringEncoding];
+	return TRUE;
+}
 
-	if (*username)
-		dialog.username = [NSString stringWithCString:*username encoding:NSUTF8StringEncoding];
+BOOL mac_verify_certificate(freerdp* instance, char* subject, char* issuer, char* fingerprint)
+{
+    mfContext *mfc = (mfContext *)instance->context;
+	MRDPView *view = (MRDPView*)mfc->view;
+    NSObject<MRDPViewDelegate> *delegate = view->delegate;
+    
+    NSString *certSubject = nil;
+    NSString *certIssuer = nil;
+    NSString *certFingerprint = nil;
+    
+    if(*subject)
+    {
+        certSubject = [NSString stringWithUTF8String:subject];
+    }
+    
+    if(*issuer)
+    {
+        certIssuer = [NSString stringWithUTF8String:issuer];
+    }
+    
+    if(*fingerprint)
+    {
+        certFingerprint = [NSString stringWithUTF8String:fingerprint];
+    }
+    
+    bool result = FALSE;
+    ServerCertificate *certificate = [[ServerCertificate alloc] initWithSubject:certSubject issuer:certIssuer andFingerprint:certFingerprint];
+    
+    if(delegate && [delegate respondsToSelector:@selector(validateCertificate:)])
+    {
+        result = [delegate validateCertificate:certificate];
+    }
+    
+    [certificate release];
+    
+    return result;
+}
 
-	if (*password)
-		dialog.password = [NSString stringWithCString:*password encoding:NSUTF8StringEncoding];
-
-	BOOL ok = [dialog runModal];
-
-	if (ok)
-	{
-		const char* submittedUsername = [dialog.username cStringUsingEncoding:NSUTF8StringEncoding];
-		*username = malloc((strlen(submittedUsername) + 1) * sizeof(char));
-		strcpy(*username, submittedUsername);
-
-		const char* submittedPassword = [dialog.password cStringUsingEncoding:NSUTF8StringEncoding];
-		*password = malloc((strlen(submittedPassword) + 1) * sizeof(char));
-		strcpy(*password, submittedPassword);
-	}
-
-	return ok;
+int mac_verify_x509certificate(freerdp* instance, BYTE* data, int length, const char* hostname, int port, DWORD flags)
+{
+    mfContext *mfc = (mfContext *)instance->context;
+	MRDPView *view = (MRDPView*)mfc->view;
+    NSObject<MRDPViewDelegate> *delegate = view->delegate;
+    
+    BOOL result = false;
+    
+    if(length > 0 && *hostname)
+    {
+        NSData *certificateData = [NSData dataWithBytes:data length:length];
+        NSString *certificateHostname = [NSString stringWithUTF8String:hostname];
+        
+        X509Certificate *x509 = [[X509Certificate alloc] initWithData:certificateData hostname:certificateHostname andPort:port];
+        
+        if(delegate && [delegate respondsToSelector:@selector(validateX509Certificate:)])
+        {
+            result = [delegate validateX509Certificate:x509];
+        }
+        
+        [x509 release];
+    }
+    
+    return result ? 0 : -1;
 }
 
 void mf_Pointer_New(rdpContext* context, rdpPointer* pointer)
@@ -1001,6 +1213,8 @@ void mf_Pointer_New(rdpContext* context, rdpPointer* pointer)
 	/* save cursor for later use in mf_Pointer_Set() */
 	ma = view->cursors;
 	[ma addObject:mrdpCursor];
+    
+    [mrdpCursor release];
 }
 
 void mf_Pointer_Free(rdpContext* context, rdpPointer* pointer)
@@ -1058,7 +1272,7 @@ CGContextRef mac_create_bitmap_context(rdpContext* context)
 {
 	CGContextRef bitmap_context;
 	rdpGdi* gdi = context->gdi;
-	
+
 	CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
 	
 	if (gdi->dstBpp == 16)
@@ -1102,9 +1316,9 @@ void mac_end_paint(rdpContext* context)
 	
 	if (!gdi)
 		return;
-	
-	ww = mfc->client_width;
-	wh = mfc->client_height;
+
+	ww = view.frame.size.width;
+	wh = view.frame.size.height;
 	dw = mfc->context.settings->DesktopWidth;
 	dh = mfc->context.settings->DesktopHeight;
 
@@ -1230,9 +1444,9 @@ static void channel_activity_cb(freerdp* instance)
 
 		switch (GetMessageClass(event->id))
 		{
-		case CliprdrChannel_Class:
-			process_cliprdr_event(instance, event);
-			break;
+            case CliprdrChannel_Class:
+                process_cliprdr_event(instance, event);
+                break;
 		}
 
 		freerdp_event_free(event);
@@ -1254,6 +1468,8 @@ int process_plugin_args(rdpSettings* settings, const char* name, RDP_PLUGIN_DATA
 
 void cliprdr_process_cb_data_request_event(freerdp* instance)
 {
+    NSLog(@"cliprdr_process_cb_data_request_event");
+    
 	int len;
 	NSArray* types;
 	RDP_CB_DATA_RESPONSE_EVENT* event;
@@ -1284,6 +1500,8 @@ void cliprdr_process_cb_data_request_event(freerdp* instance)
 
 void cliprdr_send_data_request(freerdp* instance, UINT32 format)
 {
+    NSLog(@"cliprdr_send_data_request");
+    
 	RDP_CB_DATA_REQUEST_EVENT* event;
 	
 	event = (RDP_CB_DATA_REQUEST_EVENT*) freerdp_event_new(CliprdrChannel_Class, CliprdrChannel_DataRequest, NULL, NULL);
@@ -1300,6 +1518,8 @@ void cliprdr_send_data_request(freerdp* instance, UINT32 format)
 
 void cliprdr_process_cb_data_response_event(freerdp* instance, RDP_CB_DATA_RESPONSE_EVENT* event)
 {
+    NSLog(@"cliprdr_process_cb_data_response_event");
+    
 	NSString* str;
 	NSArray* types;
 	mfContext* mfc = (mfContext*) instance->context;
@@ -1319,6 +1539,8 @@ void cliprdr_process_cb_data_response_event(freerdp* instance, RDP_CB_DATA_RESPO
 
 void cliprdr_process_cb_monitor_ready_event(freerdp* instance)
 {
+    NSLog(@"cliprdr_process_cb_monitor_ready_event");
+    
 	wMessage* event;
 	RDP_CB_FORMAT_LIST_EVENT* format_list_event;
 	
@@ -1328,6 +1550,8 @@ void cliprdr_process_cb_monitor_ready_event(freerdp* instance)
 	format_list_event->num_formats = 0;
 	
 	freerdp_channels_send_event(instance->context->channels, event);
+    
+    cliprdr_send_supported_format_list(instance);
 }
 
 /**
@@ -1338,6 +1562,8 @@ void cliprdr_process_cb_monitor_ready_event(freerdp* instance)
 
 void cliprdr_process_cb_format_list_event(freerdp* instance, RDP_CB_FORMAT_LIST_EVENT* event)
 {
+    NSLog(@"cliprdr_process_cb_format_list_event");
+    
 	int i;
 	mfContext* mfc = (mfContext*) instance->context;
 	MRDPView* view = (MRDPView*) mfc->view;
@@ -1385,6 +1611,8 @@ void cliprdr_process_cb_format_list_event(freerdp* instance, RDP_CB_FORMAT_LIST_
 
 void process_cliprdr_event(freerdp* instance, wMessage* event)
 {
+    NSLog(@"process_cliprdr_event");
+    
 	if (event)
 	{
 		switch (GetMessageType(event->id))
@@ -1436,15 +1664,17 @@ void process_cliprdr_event(freerdp* instance, wMessage* event)
 
 void cliprdr_send_supported_format_list(freerdp* instance)
 {
-	RDP_CB_FORMAT_LIST_EVENT* event;
-	
-	event = (RDP_CB_FORMAT_LIST_EVENT*) freerdp_event_new(CliprdrChannel_Class, CliprdrChannel_FormatList, NULL, NULL);
-	
-	event->formats = (UINT32*) malloc(sizeof(UINT32) * 1);
-	event->num_formats = 1;
-	event->formats[0] = CB_FORMAT_UNICODETEXT;
-	
-	freerdp_channels_send_event(instance->context->channels, (wMessage*) event);
+    NSLog(@"cliprdr_send_supported_format_list");
+    
+    RDP_CB_FORMAT_LIST_EVENT* event;
+    
+    event = (RDP_CB_FORMAT_LIST_EVENT*) freerdp_event_new(CliprdrChannel_Class, CliprdrChannel_FormatList, NULL, NULL);
+    
+    event->formats = (UINT32*) malloc(sizeof(UINT32) * 1);
+    event->num_formats = 1;
+    event->formats[0] = CB_FORMAT_UNICODETEXT;
+    
+    freerdp_channels_send_event(instance->context->channels, (wMessage*) event);
 }
 
 /**

@@ -263,6 +263,7 @@ wStream* rdp_message_channel_pdu_init(rdpRdp* rdp)
  * @param s stream
  * @param length RDP packet length
  * @param channel_id channel id
+ 
  */
 
 BOOL rdp_read_header(rdpRdp* rdp, wStream* s, UINT16* length, UINT16* channelId)
