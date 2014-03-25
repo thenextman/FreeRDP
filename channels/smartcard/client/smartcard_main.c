@@ -273,7 +273,6 @@ static void smartcard_irp_complete(IRP* irp)
 #endif
 	} else {
 		DEBUG_SCARD("Duplicate IRP: DeviceId %d FileId %d CompletionId %d", irp->device->id, irp->FileId, irp->CompletionId);
-		WLog_Print(irp->device->log, WLOG_WARN,"Duplicate IRP: DeviceId %d FileId %d CompletionId %d", irp->device->id, irp->FileId, irp->CompletionId); 
 	}
 
 	/* End TS Client defect workaround. */
