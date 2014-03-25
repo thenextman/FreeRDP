@@ -2704,8 +2704,8 @@ static UINT32 handle_Transmit(SMARTCARD_DEVICE* scard, IRP* irp, size_t inlen)
 		{
 			DEBUG_ERROR("SCARD_IO_REQUEST with invalid extra byte length %ld [%d]\n%s", ioSendPci.rq->cbPciLength - sizeof(SCARD_IO_REQUEST),
 				linkedLen, Stream_HexDump(irp->input));
-			status = SCARD_F_INTERNAL_ERROR;
-			goto finish;
+			//status = SCARD_F_INTERNAL_ERROR;
+			//goto finish;
 		}
 
 		if (Stream_GetRemainingLength(irp->input) < ioRecvPci.rq->cbPciLength)
