@@ -141,6 +141,16 @@ if(CMAKE_COMPILER_IS_GNUCC)
 	endif()
 
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
+
+	# Hack to strip absolute paths out of the __FILE__ macro
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILE__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__FILE__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
+	CHECK_C_COMPILER_FLAG (-Wno-builtin-macro-redefined Wno-builtin-macro-redefined)
+	if(Wno-builtin-macro-redefined)
+		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-builtin-macro-redefined")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-builtin-macro-redefined")
+	endif()
+
 	CHECK_C_COMPILER_FLAG (-Wno-unused-result Wno-unused-result)
 	if(Wno-unused-result)
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-result")
@@ -394,10 +404,6 @@ set(IPP_FEATURE_TYPE "OPTIONAL")
 set(IPP_FEATURE_PURPOSE "performance")
 set(IPP_FEATURE_DESCRIPTION "Intel Integrated Performance Primitives library")
 
-set(NPP_FEATURE_TYPE "OPTIONAL")
-set(NPP_FEATURE_PURPOSE "performance")
-set(NPP_FEATURE_DESCRIPTION "NVIDIA Performance Primitives library")
-
 set(JPEG_FEATURE_TYPE "OPTIONAL")
 set(JPEG_FEATURE_PURPOSE "codec")
 set(JPEG_FEATURE_DESCRIPTION "use JPEG library")
@@ -477,7 +483,6 @@ if(TARGET_ARCH MATCHES "x86|x64")
 		# Intel Performance Primitives
 		find_feature(IPP ${IPP_FEATURE_TYPE} ${IPP_FEATURE_PURPOSE} ${IPP_FEATURE_DESCRIPTION})
 	endif()
-	find_feature(NPP ${NPP_FEATURE_TYPE} ${NPP_FEATURE_PURPOSE} ${NPP_FEATURE_DESCRIPTION})
 endif()
 
 # Path to put FreeRDP data

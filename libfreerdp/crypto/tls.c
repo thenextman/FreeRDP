@@ -464,7 +464,12 @@ int tls_write(rdpTls* tls, BYTE* data, int length)
 
 	status = SSL_write(tls->ssl, data, length);
 
-	if (status <= 0)
+	if (status == 0)
+	{
+		return -1; /* peer disconnected */
+	}
+
+	if (status < 0)
 	{
 		error = SSL_get_error(tls->ssl, status);
 
@@ -782,7 +787,9 @@ BOOL tls_verify_certificate(rdpTls* tls, CryptoCert cert, char* hostname, int po
 				tls_print_certificate_name_mismatch_error(hostname, common_name, alt_names, alt_names_count);
 
 			if (instance->VerifyCertificate)
+			{
 				accept_certificate = instance->VerifyCertificate(instance, subject, issuer, fingerprint);
+			}
 
 			if (!accept_certificate)
 			{
@@ -802,7 +809,9 @@ BOOL tls_verify_certificate(rdpTls* tls, CryptoCert cert, char* hostname, int po
 			tls_print_certificate_error(hostname, fingerprint, tls->certificate_store->file);
 			
 			if (instance->VerifyChangedCertificate)
+			{
 				accept_certificate = instance->VerifyChangedCertificate(instance, subject, issuer, fingerprint, "");
+			}
 
 			if (!accept_certificate)
 			{
@@ -866,8 +875,7 @@ void tls_print_certificate_name_mismatch_error(char* hostname, char* common_name
 	int index;
 
 	assert(NULL != hostname);
-	assert(NULL != common_name);
-	
+
 	fprintf(stderr, "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
 	fprintf(stderr, "@           WARNING: CERTIFICATE NAME MISMATCH!           @\n");
 	fprintf(stderr, "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
@@ -875,17 +883,14 @@ void tls_print_certificate_name_mismatch_error(char* hostname, char* common_name
 	fprintf(stderr, "does not match %s given in the certificate:\n", alt_names_count < 1 ? "the name" : "any of the names");
 	fprintf(stderr, "Common Name (CN):\n");
 	fprintf(stderr, "\t%s\n", common_name ? common_name : "no CN found in certificate");
-	if (alt_names_count > 1)
+	if (alt_names_count > 0)
 	{
 		assert(NULL != alt_names);
 		fprintf(stderr, "Alternative names:\n");
-		if (alt_names_count > 1)
+		for (index = 0; index < alt_names_count; index++)
 		{
-			for (index = 0; index < alt_names_count; index++)
-			{
-				assert(alt_names[index]);
-				fprintf(stderr, "\t %s\n", alt_names[index]);
-			}
+			assert(alt_names[index]);
+			fprintf(stderr, "\t %s\n", alt_names[index]);
 		}
 	}
 	fprintf(stderr, "A valid certificate for the wrong name should NOT be trusted!\n");

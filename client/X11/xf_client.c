@@ -51,8 +51,6 @@
 #include <X11/extensions/Xrender.h>
 #endif
 
-#define WITH_AUTORECONNECT
-
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -870,7 +868,7 @@ BOOL xf_pre_connect(freerdp* instance)
 	xfc->WM_DELETE_WINDOW = XInternAtom(xfc->display, "WM_DELETE_WINDOW", False);
 	xfc->WM_STATE = XInternAtom(xfc->display, "WM_STATE", False);
 
-	xf_kbd_init(xfc);
+	xf_keyboard_init(xfc);
 
 	xfc->clrconv = freerdp_clrconv_new(CLRCONV_ALPHA);
 
@@ -974,10 +972,10 @@ BOOL xf_post_connect(freerdp* instance)
 
 	ZeroMemory(&gcv, sizeof(gcv));
 
-	if (xfc->modifier_map)
-		XFreeModifiermap(xfc->modifier_map);
+	if (xfc->modifierMap)
+		XFreeModifiermap(xfc->modifierMap);
 
-	xfc->modifier_map = XGetModifierMapping(xfc->display);
+	xfc->modifierMap = XGetModifierMapping(xfc->display);
 
 	xfc->gc = XCreateGC(xfc->display, xfc->drawable, GCGraphicsExposures, &gcv);
 	xfc->primary = XCreatePixmap(xfc->display, xfc->drawable, xfc->width, xfc->height, xfc->depth);
@@ -1122,11 +1120,6 @@ int xf_logon_error_info(freerdp* instance, UINT32 data, UINT32 type)
 	return 1;
 }
 
-int xf_receive_channel_data(freerdp* instance, int channelId, BYTE* data, int size, int flags, int total_size)
-{
-	return freerdp_channels_data(instance, channelId, data, size, flags, total_size);
-}
-
 void xf_process_channel_event(rdpChannels* channels, freerdp* instance)
 {
 	xfContext* xfc;
@@ -1168,11 +1161,7 @@ void xf_window_free(xfContext* xfc)
 {
 	rdpContext* context = (rdpContext*) xfc;
 
-	if (xfc->modifier_map)
-	{
-		XFreeModifiermap(xfc->modifier_map);
-		xfc->modifier_map = NULL;
-	}
+	xf_keyboard_free(xfc);
 
 	if (xfc->gc)
 	{
@@ -1367,19 +1356,20 @@ void* xf_channels_thread(void* arg)
 	return NULL;
 }
 
-#ifdef WITH_AUTORECONNECT
 BOOL xf_auto_reconnect(freerdp* instance)
 {
-	xfContext* xfc = (xfContext*)instance->context;
+	xfContext* xfc = (xfContext*) instance->context;
 
 	UINT32 num_retries = 0;
 	UINT32 max_retries = instance->settings->AutoReconnectMaxRetries;
 
 	/* Only auto reconnect on network disconnects. */
-	if (freerdp_error_info(instance) != 0) return FALSE;
+	if (freerdp_error_info(instance) != 0)
+		return FALSE;
 
 	/* A network disconnect was detected */
 	fprintf(stderr, "Network disconnect!\n");
+
 	if (!instance->settings->AutoReconnectionEnabled)
 	{
 		/* No auto-reconnect - just quit */
@@ -1397,6 +1387,7 @@ BOOL xf_auto_reconnect(freerdp* instance)
 
 		/* Attempt the next reconnect */
 		fprintf(stderr, "Attempting reconnect (%u of %u)\n", num_retries, max_retries);
+
 		if (freerdp_reconnect(instance))
 		{
 			xfc->disconnect = FALSE;
@@ -1410,7 +1401,6 @@ BOOL xf_auto_reconnect(freerdp* instance)
 
 	return FALSE;
 }
-#endif
 
 /** Main loop for the rdp connection.
  *  It will be run from the thread's entry point (thread_func()).
@@ -1457,11 +1447,6 @@ void* xf_thread(void* param)
 	ZeroMemory(rfds, sizeof(rfds));
 	ZeroMemory(wfds, sizeof(wfds));
 	ZeroMemory(&timeout, sizeof(struct timeval));
-
-#ifdef WITH_AUTORECONNECT
-	instance->settings->AutoReconnectionEnabled = TRUE;
-	instance->settings->AutoReconnectMaxRetries = 20;
-#endif
 
 	status = freerdp_connect(instance);
 
@@ -1526,8 +1511,8 @@ void* xf_thread(void* param)
 		 */
 		if (freerdp_focus_required(instance))
 		{
-			xf_kbd_focus_in(xfc);
-			xf_kbd_focus_in(xfc);
+			xf_keyboard_focus_in(xfc);
+			xf_keyboard_focus_in(xfc);
 		}
 
 		if (!async_transport)
@@ -1607,9 +1592,9 @@ void* xf_thread(void* param)
 		{
 			if (freerdp_check_fds(instance) != TRUE)
 			{
-#ifdef WITH_AUTORECONNECT
-				if (xf_auto_reconnect(instance)) continue;
-#endif
+				if (xf_auto_reconnect(instance))
+					continue;
+
 				fprintf(stderr, "Failed to check FreeRDP file descriptor\n");
 				break;
 			}
@@ -1861,7 +1846,6 @@ static int xfreerdp_client_new(freerdp* instance, rdpContext* context)
 	instance->Authenticate = xf_authenticate;
 	instance->VerifyCertificate = xf_verify_certificate;
 	instance->LogonErrorInfo = xf_logon_error_info;
-	instance->ReceiveChannelData = xf_receive_channel_data;
 
 	context->channels = freerdp_channels_new();
 

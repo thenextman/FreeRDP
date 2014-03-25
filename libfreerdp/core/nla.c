@@ -27,16 +27,16 @@
 #include <unistd.h>
 #endif
 
-
-#include <freerdp/crypto/tls.h>
-
 #include <winpr/crt.h>
 #include <winpr/sspi.h>
 #include <winpr/print.h>
 #include <winpr/tchar.h>
+#include <winpr/dsparse.h>
 #include <winpr/library.h>
 #include <winpr/registry.h>
 #include <winpr/credentials.h>
+
+#include <freerdp/crypto/tls.h>
 
 #include "nla.h"
 
@@ -166,6 +166,9 @@ int credssp_ntlm_client_init(rdpCredssp* credssp)
 	settings = credssp->settings;
 	instance = (freerdp*) settings->instance;
 
+	if (settings->RestrictedAdminModeRequired)
+		settings->DisableCredentialsDelegation = TRUE;
+
 	if ((!settings->Password) || (!settings->Username)
 			|| (!strlen(settings->Password)) || (!strlen(settings->Username)))
 	{
@@ -193,6 +196,7 @@ int credssp_ntlm_client_init(rdpCredssp* credssp)
 			if (!proceed)
 			{
 				connectErrorCode = CANCELEDBYUSER;
+				freerdp_set_last_error(instance->context, FREERDP_ERROR_CONNECT_CANCELLED);
 				return 0;
 			}
 
@@ -1260,7 +1264,7 @@ int credssp_write_ts_smartcard_creds(rdpCredssp* credssp, wStream* s)
 	size += ber_write_contextual_tag(s, 1, ber_sizeof_octet_string(cspdataSize), TRUE);
 	size += credssp_write_ts_cspdata_detail(credssp, s);
 
-#if defined(WITH_DEBUG_CREDSSP)
+#ifdef WITH_DEBUG_CREDSSP
 	{
 		void *n = s->pointer-size;
 		SaveBufferToFile("tssmartcardcreds.ber", (BYTE*)n, size);
@@ -1383,7 +1387,7 @@ void credssp_encode_ts_credentials(rdpCredssp* credssp)
 	UserLength = credssp->identity.UserLength;
 	PasswordLength = credssp->identity.PasswordLength;
 
-	if (credssp->settings->RestrictedAdminModeRequired)
+	if (credssp->settings->DisableCredentialsDelegation)
 	{
 		credssp->identity.DomainLength = 0;
 		credssp->identity.UserLength = 0;
@@ -1394,17 +1398,18 @@ void credssp_encode_ts_credentials(rdpCredssp* credssp)
 	DEBUG_CREDSSP("sizeof: %d", length);
 	sspi_SecBufferAlloc(&credssp->ts_credentials, length);
 
-	s = Stream_New((BYTE*)credssp->ts_credentials.pvBuffer, length);
+	s = Stream_New((BYTE*) credssp->ts_credentials.pvBuffer, length);
+
 	credssp_write_ts_credentials(credssp, s);
 
-	if (credssp->settings->RestrictedAdminModeRequired)
+	if (credssp->settings->DisableCredentialsDelegation)
 	{
 		credssp->identity.DomainLength = DomainLength;
 		credssp->identity.UserLength = UserLength;
 		credssp->identity.PasswordLength = PasswordLength;
 	}
 
-#if defined(WITH_DEBUG_CREDSSP)
+#ifdef WITH_DEBUG_CREDSSP
 	SaveBufferToFile("tscredentials.ber", s->buffer, length);
 #endif
 
@@ -1445,7 +1450,7 @@ SECURITY_STATUS credssp_encrypt_ts_credentials(rdpCredssp* credssp)
 	CopyMemory(Buffers[1].pvBuffer, credssp->ts_credentials.pvBuffer, Buffers[1].cbBuffer);
 #endif
 
-#if defined(WITH_DEBUG_CREDSSP)
+#ifdef WITH_DEBUG_CREDSSP
 	SaveBufferToFile("credentials.ber", (PBYTE)credssp->ts_credentials.pvBuffer, credssp->ts_credentials.cbBuffer);
 	SaveBufferToFile("credentials2.ber", (PBYTE)Buffers[1].pvBuffer, Buffers[1].cbBuffer);
 #endif
@@ -1476,7 +1481,7 @@ SECURITY_STATUS credssp_encrypt_ts_credentials(rdpCredssp* credssp)
 
 	DEBUG_CREDSSP("Adjusted Token Size: %ld (%#lx)", Buffers[0].cbBuffer, Buffers[0].cbBuffer);
 
-#if defined(WITH_DEBUG_CREDSSP)
+#ifdef WITH_DEBUG_CREDSSP
 	SaveBufferToFile("authinfo-encrypted.raw", (PBYTE)credssp->authInfo.pvBuffer, credssp->authInfo.cbBuffer);
 #endif
 
@@ -1783,6 +1788,59 @@ void credssp_buffer_free(rdpCredssp* credssp)
 	sspi_SecBufferFree(&credssp->authInfo);
 }
 
+LPTSTR credssp_make_spn(const char* ServiceClass, const char* hostname)
+{
+	DWORD status;
+	DWORD SpnLength;
+	LPTSTR hostnameX = NULL;
+	LPTSTR ServiceClassX = NULL;
+	LPTSTR ServicePrincipalName = NULL;
+
+#ifdef UNICODE
+	ConvertToUnicode(CP_UTF8, 0, hostname, -1, &hostnameX, 0);
+	ConvertToUnicode(CP_UTF8, 0, ServiceClass, -1, &ServiceClassX, 0);
+#else
+	hostnameX = _strdup(hostname);
+	ServiceClassX = _strdup(ServiceClass);
+#endif
+
+	if (!ServiceClass)
+	{
+		ServicePrincipalName = (LPTSTR) _tcsdup(hostnameX);
+		free(ServiceClassX);
+		free(hostnameX);
+
+		return ServicePrincipalName;
+	}
+
+	SpnLength = 0;
+	status = DsMakeSpn(ServiceClassX, hostnameX, NULL, 0, NULL, &SpnLength, NULL);
+
+	if (status != ERROR_BUFFER_OVERFLOW)
+	{
+		free(ServiceClassX);
+		free(hostnameX);
+		return NULL;
+	}
+
+	ServicePrincipalName = (LPTSTR) malloc(SpnLength * sizeof(TCHAR));
+
+	status = DsMakeSpn(ServiceClassX, hostnameX, NULL, 0, NULL, &SpnLength, ServicePrincipalName);
+
+	if (status != ERROR_SUCCESS)
+	{
+		free(ServicePrincipalName);
+		free(ServiceClassX);
+		free(hostnameX);
+		return NULL;
+	}
+
+	free(ServiceClassX);
+	free(hostnameX);
+
+	return ServicePrincipalName;
+}
+
 /**
  * Create new CredSSP state machine.
  * @param transport
@@ -1793,10 +1851,11 @@ rdpCredssp* credssp_new(freerdp* instance, rdpTransport* transport, rdpSettings*
 {
 	rdpCredssp* credssp;
 	credssp = (rdpCredssp*) malloc(sizeof(rdpCredssp));
-	ZeroMemory(credssp, sizeof(rdpCredssp));
 
-	if (credssp != NULL)
+	if (credssp)
 	{
+
+		ZeroMemory(credssp, sizeof(rdpCredssp));
 
 		credssp->instance = instance;
 		credssp->settings = settings;
@@ -1858,7 +1917,7 @@ rdpCredssp* credssp_new(freerdp* instance, rdpTransport* transport, rdpSettings*
 
 void credssp_free(rdpCredssp* credssp)
 {
-	if (credssp != NULL)
+	if (credssp)
 	{
 		if (credssp->SspiModule) {
 			free(credssp->SspiModule);

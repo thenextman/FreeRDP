@@ -2274,7 +2274,8 @@ BOOL rdp_read_multifragment_update_capability_set(wStream* s, UINT16 length, rdp
 		return FALSE;
 
 	Stream_Read_UINT32(s, multifragMaxRequestSize); /* MaxRequestSize (4 bytes) */
-	if (settings->RemoteFxCodec && settings->MultifragMaxRequestSize < multifragMaxRequestSize)
+
+	if (multifragMaxRequestSize < settings->MultifragMaxRequestSize)
 		settings->MultifragMaxRequestSize = multifragMaxRequestSize;
 
 	return TRUE;
@@ -2395,7 +2396,7 @@ BOOL rdp_read_surface_commands_capability_set(wStream* s, UINT16 length, rdpSett
 	Stream_Seek_UINT32(s); /* reserved (4 bytes) */
 
 	settings->SurfaceCommandsEnabled = TRUE;
-	settings->SurfaceFrameMarkerEnabled = (cmdFlags & SURFCMDS_FRAME_MARKER);
+	settings->SurfaceFrameMarkerEnabled = (cmdFlags & SURFCMDS_FRAME_MARKER) ? TRUE : FALSE;
 
 	return TRUE;
 }
@@ -3389,7 +3390,7 @@ BOOL rdp_recv_get_active_header(rdpRdp* rdp, wStream* s, UINT16* pChannelId)
 
 	if (*pChannelId != MCS_GLOBAL_CHANNEL_ID)
 	{
-		UINT16 mcsMessageChannelId = rdp->mcs->message_channel_id;
+		UINT16 mcsMessageChannelId = rdp->mcs->messageChannelId;
 
 		if ((mcsMessageChannelId == 0) || (*pChannelId != mcsMessageChannelId))
 		{
@@ -3526,11 +3527,11 @@ BOOL rdp_send_demand_active(rdpRdp* rdp)
 	s = Stream_New(NULL, 4096);
 	rdp_init_stream_pdu(rdp, s);
 
-	rdp->settings->ShareId = 0x10000 + rdp->mcs->user_id;
+	rdp->settings->ShareId = 0x10000 + rdp->mcs->userId;
 
 	rdp_write_demand_active(s, rdp->settings);
 
-	status = rdp_send_pdu(rdp, s, PDU_TYPE_DEMAND_ACTIVE, rdp->mcs->user_id);
+	status = rdp_send_pdu(rdp, s, PDU_TYPE_DEMAND_ACTIVE, rdp->mcs->userId);
 
 	Stream_Free(s, TRUE);
 
@@ -3567,6 +3568,8 @@ BOOL rdp_recv_confirm_active(rdpRdp* rdp, wStream* s)
 	if (!settings->ReceivedCapabilities[CAPSET_TYPE_SURFACE_COMMANDS])
 	{
 		/* client does not support surface commands */
+		settings->SurfaceCommandsEnabled = FALSE;
+		settings->SurfaceFrameMarkerEnabled = FALSE;
 	}
 
 	if (!settings->ReceivedCapabilities[CAPSET_TYPE_FRAME_ACKNOWLEDGE])
@@ -3741,7 +3744,7 @@ BOOL rdp_send_confirm_active(rdpRdp* rdp)
 
 	rdp_write_confirm_active(s, rdp->settings);
 
-	status = rdp_send_pdu(rdp, s, PDU_TYPE_CONFIRM_ACTIVE, rdp->mcs->user_id);
+	status = rdp_send_pdu(rdp, s, PDU_TYPE_CONFIRM_ACTIVE, rdp->mcs->userId);
 
 	Stream_Free(s, TRUE);
 

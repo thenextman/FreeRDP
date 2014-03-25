@@ -26,6 +26,7 @@
 
 #include "mcs.h"
 #include "tpkt.h"
+#include "bulk.h"
 #include "fastpath.h"
 #include "tpdu.h"
 #include "nego.h"
@@ -42,20 +43,18 @@
 #include "connection.h"
 #include "redirection.h"
 #include "capabilities.h"
-#include "channel.h"
+#include "channels.h"
 
 #include <freerdp/freerdp.h>
 #include <freerdp/settings.h>
 #include <freerdp/utils/debug.h>
-#include <freerdp/codec/mppc_dec.h>
-#include <freerdp/codec/mppc_enc.h>
 
 #include <winpr/stream.h>
 
 /* Security Header Flags */
 #define SEC_EXCHANGE_PKT					0x0001
-#define SEC_TRANSPORT_REQ				0x0002
-#define SEC_TRANSPORT_RSP				0x0004
+#define SEC_TRANSPORT_REQ					0x0002
+#define SEC_TRANSPORT_RSP					0x0004
 #define SEC_ENCRYPT						0x0008
 #define SEC_RESET_SEQNO						0x0010
 #define SEC_IGNORE_SEQNO					0x0020
@@ -131,6 +130,7 @@ struct rdp_rdp
 	rdpContext* context;
 	rdpMcs* mcs;
 	rdpNego* nego;
+	rdpBulk* bulk;
 	rdpInput* input;
 	rdpUpdate* update;
 	rdpFastPath* fastpath;
@@ -142,8 +142,6 @@ struct rdp_rdp
 	rdpAutoDetect* autodetect;
 	rdpHeartbeat* heartbeat;
 	rdpMultitransport* multitransport;
-	struct rdp_mppc_dec* mppc_dec;
-	struct rdp_mppc_enc* mppc_enc;
 	struct crypto_rc4_struct* rc4_decrypt_key;
 	int decrypt_use_count;
 	int decrypt_checksum_use_count;
@@ -198,9 +196,9 @@ wStream* rdp_data_pdu_init(rdpRdp* rdp);
 BOOL rdp_send_data_pdu(rdpRdp* rdp, wStream* s, BYTE type, UINT16 channel_id);
 int rdp_recv_data_pdu(rdpRdp* rdp, wStream* s);
 
-BOOL rdp_send(rdpRdp* rdp, wStream* s, UINT16 channel_id);
+BOOL rdp_send(rdpRdp* rdp, wStream* s, UINT16 channelId);
 
-int rdp_send_channel_data(rdpRdp* rdp, int channel_id, BYTE* data, int size);
+int rdp_send_channel_data(rdpRdp* rdp, UINT16 channelId, BYTE* data, int size);
 
 wStream* rdp_message_channel_pdu_init(rdpRdp* rdp);
 BOOL rdp_send_message_channel_pdu(rdpRdp* rdp, wStream* s, UINT16 sec_flags);
@@ -222,5 +220,7 @@ void rdp_free(rdpRdp* rdp);
 #endif
 
 BOOL rdp_decrypt(rdpRdp* rdp, wStream* s, int length, UINT16 securityFlags);
+
+BOOL rdp_set_error_info(rdpRdp* rdp, UINT32 errorInfo);
 
 #endif /* __RDP_H */

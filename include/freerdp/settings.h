@@ -251,6 +251,13 @@ typedef struct _TARGET_NET_ADDRESS TARGET_NET_ADDRESS;
 #define STATUS_VM_WAKING			0x00000502
 #define STATUS_VM_BOOTING			0x00000503
 
+/* Compression Flags */
+#define PACKET_COMPR_TYPE_8K			0x00
+#define PACKET_COMPR_TYPE_64K			0x01
+#define PACKET_COMPR_TYPE_RDP6			0x02
+#define PACKET_COMPR_TYPE_RDP61			0x03
+#define PACKET_COMPR_TYPE_RDP8			0x04
+
 /* SYSTEM_TIME */
 typedef struct
 {
@@ -337,16 +344,6 @@ struct rdp_rsa_key
 typedef struct rdp_rsa_key rdpRsaKey;
 
 /* Channels */
-
-struct rdp_channel
-{
-	char Name[8];
-	UINT32 options;
-	int ChannelId;
-	BOOL joined;
-	void* handle;
-};
-typedef struct rdp_channel rdpChannel;
 
 struct _ADDIN_ARGV
 {
@@ -548,7 +545,7 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_DesktopPosX					390
 #define FreeRDP_DesktopPosY					391
 #define FreeRDP_MultitransportFlags				512
-#define FreeRDP_SupportMultitransport			513
+#define FreeRDP_SupportMultitransport				513
 #define FreeRDP_AlternateShell					640
 #define FreeRDP_ShellWorkingDirectory				641
 #define FreeRDP_AutoLogonEnabled				704
@@ -568,6 +565,7 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_UsingSavedCredentials				718
 #define FreeRDP_ForceEncryptedCsPdu				719
 #define FreeRDP_HiDefRemoteApp					720
+#define FreeRDP_CompressionLevel				721
 #define FreeRDP_IPv6Enabled					768
 #define FreeRDP_ClientAddress					769
 #define FreeRDP_ClientDir					770
@@ -597,6 +595,8 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_NegotiationFlags				1095
 #define FreeRDP_NegotiateSecurityLayer				1096
 #define FreeRDP_RestrictedAdminModeRequired			1097
+#define FreeRDP_AuthenticationServiceClass 			1098
+#define FreeRDP_DisableCredentialsDelegation 			1099
 #define FreeRDP_MstscCookieMode					1152
 #define FreeRDP_CookieMaxLength					1153
 #define FreeRDP_PreconnectionId					1154
@@ -669,6 +669,7 @@ typedef struct _RDPDR_PARALLEL RDPDR_PARALLEL;
 #define FreeRDP_GatewayCredentialsSource			1990
 #define FreeRDP_GatewayUseSameCredentials			1991
 #define FreeRDP_GatewayEnabled					1992
+#define FreeRDP_GatewayBypassLocal				1993
 #define FreeRDP_RemoteApplicationMode				2112
 #define FreeRDP_RemoteApplicationName				2113
 #define FreeRDP_RemoteApplicationIcon				2114
@@ -851,7 +852,7 @@ struct rdp_settings
 	/* Client Network Data */
 	ALIGN64 UINT32 ChannelCount; /* 256 */
 	ALIGN64 UINT32 ChannelDefArraySize; /* 257 */
-	ALIGN64 rdpChannel* ChannelDefArray; /* 258 */
+	ALIGN64 CHANNEL_DEF* ChannelDefArray; /* 258 */
 	UINT64 padding0320[320 - 259]; /* 259 */
 
 	/* Client Cluster Data */
@@ -910,7 +911,8 @@ struct rdp_settings
 	ALIGN64 BOOL UsingSavedCredentials; /* 718 */
 	ALIGN64 BOOL ForceEncryptedCsPdu; /* 719 */
 	ALIGN64 BOOL HiDefRemoteApp; /* 720 */
-	UINT64 padding0768[768 - 721]; /* 721 */
+	ALIGN64 UINT32 CompressionLevel; /* 721 */
+	UINT64 padding0768[768 - 722]; /* 722 */
 
 	/* Client Info (Extra) */
 	ALIGN64 BOOL IPv6Enabled; /* 768 */
@@ -960,7 +962,9 @@ struct rdp_settings
 	ALIGN64 UINT32 NegotiationFlags; /* 1095 */
 	ALIGN64 BOOL NegotiateSecurityLayer; /* 1096 */
 	ALIGN64 BOOL RestrictedAdminModeRequired; /* 1097 */
-	UINT64 padding1152[1152 - 1098]; /* 1098 */
+	ALIGN64 char* AuthenticationServiceClass; /* 1098 */
+	ALIGN64 BOOL DisableCredentialsDelegation; /* 1099 */
+	UINT64 padding1152[1152 - 1100]; /* 1100 */
 
 	/* Connection Cookie */
 	ALIGN64 BOOL MstscCookieMode; /* 1152 */
@@ -1082,7 +1086,8 @@ struct rdp_settings
 	ALIGN64 UINT32 GatewayCredentialsSource; /* 1990 */
 	ALIGN64 BOOL GatewayUseSameCredentials; /* 1991 */
 	ALIGN64 BOOL GatewayEnabled; /* 1992 */
-	UINT64 padding2048[2048 - 1993]; /* 1993 */
+	ALIGN64 BOOL GatewayBypassLocal; /* 1993 */
+	UINT64 padding2048[2048 - 1994]; /* 1994 */
 	UINT64 padding2112[2112 - 2048]; /* 2048 */
 
 	/**

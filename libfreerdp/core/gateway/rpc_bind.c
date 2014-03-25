@@ -120,6 +120,7 @@ int rpc_send_bind_pdu(rdpRpc* rpc)
 			if (!proceed)
 			{
 				connectErrorCode = CANCELEDBYUSER;
+				freerdp_set_last_error(instance->context, FREERDP_ERROR_CONNECT_CANCELLED);
 				return 0;
 			}
 
@@ -215,7 +216,8 @@ int rpc_send_bind_pdu(rdpRpc* rpc)
 	clientCall = rpc_client_call_new(bind_pdu->call_id, 0);
 	ArrayList_Add(rpc->client->ClientCallList, clientCall);
 
-	rpc_send_enqueue_pdu(rpc, buffer, length);
+	if (rpc_send_enqueue_pdu(rpc, buffer, length) != 0)
+		length = -1;
 
 	free(bind_pdu->p_context_elem.p_cont_elem[0].transfer_syntaxes);
 	free(bind_pdu->p_context_elem.p_cont_elem[1].transfer_syntaxes);
@@ -330,7 +332,8 @@ int rpc_send_rpc_auth_3_pdu(rdpRpc* rpc)
 	clientCall = rpc_client_call_new(auth_3_pdu->call_id, 0);
 	ArrayList_Add(rpc->client->ClientCallList, clientCall);
 
-	rpc_send_enqueue_pdu(rpc, buffer, length);
+	if (rpc_send_enqueue_pdu(rpc, buffer, length) != 0)
+		length = -1;
 
 	free(auth_3_pdu);
 

@@ -57,6 +57,7 @@ COMMAND_LINE_ARGUMENT_A args[] =
 	{ "pth", COMMAND_LINE_VALUE_REQUIRED, "<password hash>", NULL, NULL, -1, "pass-the-hash", "Pass the hash (restricted admin mode)" },
 	{ "client-hostname", COMMAND_LINE_VALUE_REQUIRED, "<name>", NULL, NULL, -1, NULL, "Client Hostname to send to server" },
 	{ "multimon", COMMAND_LINE_VALUE_OPTIONAL, NULL, NULL, NULL, -1, NULL, "Use multiple monitors" },
+	{ "span", COMMAND_LINE_VALUE_OPTIONAL, NULL, NULL, NULL, -1, NULL, "Span screen over multiple monitors" },
 	{ "workarea", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, NULL, "Use available work area" },
 	{ "monitors", COMMAND_LINE_VALUE_REQUIRED, "<0,1,2...>", NULL, NULL, -1, NULL, "Select monitors to use" },
 	{ "monitor-list", COMMAND_LINE_VALUE_FLAG | COMMAND_LINE_PRINT, NULL, NULL, NULL, -1, NULL, "List detected monitors" },
@@ -81,6 +82,7 @@ COMMAND_LINE_ARGUMENT_A args[] =
 	{ "app-file", COMMAND_LINE_VALUE_REQUIRED, "<file name>", NULL, NULL, -1, NULL, "File to open with remote application" },
 	{ "app-guid", COMMAND_LINE_VALUE_REQUIRED, "<app guid>", NULL, NULL, -1, NULL, "Remote application GUID" },
 	{ "compression", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, "z", "Compression" },
+	{ "compression-level", COMMAND_LINE_VALUE_REQUIRED, "<level>", NULL, NULL, -1, NULL, "Compression level (0,1,2)" },
 	{ "shell", COMMAND_LINE_VALUE_REQUIRED, NULL, NULL, NULL, -1, NULL, "Alternate shell" },
 	{ "shell-dir", COMMAND_LINE_VALUE_REQUIRED, NULL, NULL, NULL, -1, NULL, "Shell working directory" },
 	{ "sound", COMMAND_LINE_VALUE_OPTIONAL, NULL, NULL, NULL, -1, "audio", "Audio output (sound)" },
@@ -125,6 +127,8 @@ COMMAND_LINE_ARGUMENT_A args[] =
 	{ "cert-ignore", COMMAND_LINE_VALUE_FLAG, NULL, NULL, NULL, -1, NULL, "ignore certificate" },
 	{ "pcb", COMMAND_LINE_VALUE_REQUIRED, "<blob>", NULL, NULL, -1, NULL, "Preconnection Blob" },
 	{ "pcid", COMMAND_LINE_VALUE_REQUIRED, "<id>", NULL, NULL, -1, NULL, "Preconnection Id" },
+	{ "spn-class", COMMAND_LINE_VALUE_REQUIRED, "<service class>", NULL, NULL, -1, NULL, "SPN authentication service class" },
+	{ "credentials-delegation", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Disable credentials delegation" },
 	{ "vmconnect", COMMAND_LINE_VALUE_OPTIONAL, "<vmid>", NULL, NULL, -1, NULL, "Hyper-V console (use port 2179, disable negotiation)" },
 	{ "authentication", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL, "authentication (hack!)" },
 	{ "encryption", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueTrue, NULL, -1, NULL, "encryption (hack!)" },
@@ -147,6 +151,7 @@ COMMAND_LINE_ARGUMENT_A args[] =
 	{ "help", COMMAND_LINE_VALUE_FLAG | COMMAND_LINE_PRINT_HELP, NULL, NULL, NULL, -1, "?", "print help" },
 	{ "play-rfx", COMMAND_LINE_VALUE_REQUIRED, "<pcap file>", NULL, NULL, -1, NULL, "Replay rfx pcap file" },
 	{ "auth-only", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Authenticate only." },
+	{ "auto-reconnect", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Automatic reconnection" },
 	{ "reconnect-cookie", COMMAND_LINE_VALUE_REQUIRED, "<base64 cookie>", NULL, NULL, -1, NULL, "Pass base64 reconnect cookie to the connection" },
 	{ "print-reconnect-cookie", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Print base64 reconnect cookie after connecting" },
 	{ "heartbeat", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Support heartbeat PDUs" },
@@ -1152,6 +1157,14 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 				settings->ServerHostname = _strdup(arg->Value);
 			}
 		}
+		CommandLineSwitchCase(arg, "spn-class")
+		{
+			settings->AuthenticationServiceClass = _strdup(arg->Value);
+		}
+		CommandLineSwitchCase(arg, "credentials-delegation")
+		{
+			settings->DisableCredentialsDelegation = arg->Value ? FALSE : TRUE;
+		}
 		CommandLineSwitchCase(arg, "vmconnect")
 		{
 			settings->ServerPort = 2179;
@@ -1190,13 +1203,10 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		{
 			settings->Fullscreen = TRUE;
 		}
-		CommandLineSwitchCase(arg, "span")
-		{
-			settings->SpanMonitors = TRUE;
-		}
 		CommandLineSwitchCase(arg, "multimon")
 		{
 			settings->UseMultimon = TRUE;
+			settings->SpanMonitors = FALSE;
 			settings->Fullscreen = TRUE;
 
 			if (arg->Flags & COMMAND_LINE_VALUE_PRESENT)
@@ -1206,6 +1216,12 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 					settings->ForceMultimon = TRUE;
 				}
 			}
+		}
+		CommandLineSwitchCase(arg, "span")
+		{
+			settings->UseMultimon = TRUE;
+			settings->SpanMonitors = TRUE;
+			settings->Fullscreen = TRUE;
 		}
 		CommandLineSwitchCase(arg, "workarea")
 		{
@@ -1347,9 +1363,11 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 				settings->GatewayHostname = _strdup(settings->ServerHostname);
 			}
 
-			settings->GatewayUsageMethod = TSC_PROXY_MODE_DIRECT;
 			settings->GatewayUseSameCredentials = TRUE;
+
+			settings->GatewayUsageMethod = TSC_PROXY_MODE_DETECT;
 			settings->GatewayEnabled = TRUE;
+			settings->GatewayBypassLocal = TRUE;
 		}
 		CommandLineSwitchCase(arg, "gu")
 		{
@@ -1411,6 +1429,10 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		CommandLineSwitchCase(arg, "compression")
 		{
 			settings->CompressionEnabled = arg->Value ? TRUE : FALSE;
+		}
+		CommandLineSwitchCase(arg, "compression-level")
+		{
+			settings->CompressionLevel = atoi(arg->Value);
 		}
 		CommandLineSwitchCase(arg, "drives")
 		{
@@ -1719,6 +1741,10 @@ int freerdp_client_settings_parse_command_line_arguments(rdpSettings* settings, 
 		CommandLineSwitchCase(arg, "auth-only")
 		{
 			settings->AuthenticationOnly = arg->Value ? TRUE : FALSE;
+		}
+		CommandLineSwitchCase(arg, "auto-reconnect")
+		{
+			settings->AutoReconnectionEnabled = arg->Value ? TRUE : FALSE;
 		}
 		CommandLineSwitchCase(arg, "reconnect-cookie")
 		{

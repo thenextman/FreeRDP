@@ -654,6 +654,10 @@ BOOL freerdp_get_param_bool(rdpSettings* settings, int id)
 			return settings->RestrictedAdminModeRequired;
 			break;
 
+		case FreeRDP_DisableCredentialsDelegation:
+			return settings->DisableCredentialsDelegation;
+			break;
+
 		case FreeRDP_MstscCookieMode:
 			return settings->MstscCookieMode;
 			break;
@@ -740,6 +744,10 @@ BOOL freerdp_get_param_bool(rdpSettings* settings, int id)
 
 		case FreeRDP_GatewayEnabled:
 			return settings->GatewayEnabled;
+			break;
+
+		case FreeRDP_GatewayBypassLocal:
+			return settings->GatewayBypassLocal;
 			break;
 
 		case FreeRDP_RemoteApplicationMode:
@@ -1122,6 +1130,10 @@ int freerdp_set_param_bool(rdpSettings* settings, int id, BOOL param)
 			settings->RestrictedAdminModeRequired = param;
 			break;
 
+		case FreeRDP_DisableCredentialsDelegation:
+			settings->DisableCredentialsDelegation = param;
+			break;
+
 		case FreeRDP_MstscCookieMode:
 			settings->MstscCookieMode = param;
 			break;
@@ -1208,6 +1220,10 @@ int freerdp_set_param_bool(rdpSettings* settings, int id, BOOL param)
 
 		case FreeRDP_GatewayEnabled:
 			settings->GatewayEnabled = param;
+			break;
+
+		case FreeRDP_GatewayBypassLocal:
+			settings->GatewayBypassLocal = param;
 			break;
 
 		case FreeRDP_RemoteApplicationMode:
@@ -1527,6 +1543,10 @@ UINT32 freerdp_get_param_uint32(rdpSettings* settings, int id)
 			return settings->MultitransportFlags;
 			break;
 
+		case FreeRDP_CompressionLevel:
+			return settings->CompressionLevel;
+			break;
+
 		case FreeRDP_AutoReconnectMaxRetries:
 			return settings->AutoReconnectMaxRetries;
 			break;
@@ -1829,6 +1849,10 @@ int freerdp_set_param_uint32(rdpSettings* settings, int id, UINT32 param)
 
 		case FreeRDP_MultitransportFlags:
 			settings->MultitransportFlags = param;
+			break;
+
+		case FreeRDP_CompressionLevel:
+			settings->CompressionLevel = param;
 			break;
 
 		case FreeRDP_AutoReconnectMaxRetries:
@@ -2137,6 +2161,10 @@ char* freerdp_get_param_string(rdpSettings* settings, int id)
 			return settings->DynamicDSTTimeZoneKeyName;
 			break;
 
+		case FreeRDP_AuthenticationServiceClass:
+			return settings->AuthenticationServiceClass;
+			break;
+
 		case FreeRDP_PreconnectionBlob:
 			return settings->PreconnectionBlob;
 			break;
@@ -2315,6 +2343,11 @@ int freerdp_set_param_string(rdpSettings* settings, int id, const char* param)
 		case FreeRDP_DynamicDSTTimeZoneKeyName:
 			free(settings->DynamicDSTTimeZoneKeyName);
 			settings->DynamicDSTTimeZoneKeyName = _strdup(param);
+			break;
+
+		case FreeRDP_AuthenticationServiceClass:
+			free(settings->AuthenticationServiceClass);
+			settings->AuthenticationServiceClass = _strdup(param);
 			break;
 
 		case FreeRDP_PreconnectionBlob:

@@ -65,8 +65,8 @@ typedef int (*pVerifyX509Certificate)(freerdp* instance, BYTE* data, int length,
 
 typedef int (*pLogonErrorInfo)(freerdp* instance, UINT32 data, UINT32 type);
 
-typedef int (*pSendChannelData)(freerdp* instance, int channelId, BYTE* data, int size);
-typedef int (*pReceiveChannelData)(freerdp* instance, int channelId, BYTE* data, int size, int flags, int total_size);
+typedef int (*pSendChannelData)(freerdp* instance, UINT16 channelId, BYTE* data, int size);
+typedef int (*pReceiveChannelData)(freerdp* instance, UINT16 channelId, BYTE* data, int size, int flags, int totalSize);
 
 /**
  * Defines the context for a given instance of RDP connection.
@@ -85,7 +85,9 @@ struct rdp_context
 						   This field is used only on the server side. */
 	ALIGN64 BOOL ServerMode; /**< (offset 2) true when context is in server mode */
 
-	UINT64 paddingA[16 - 3]; /* 3 */
+	ALIGN64 UINT32 LastError; /* 3 */
+
+	UINT64 paddingA[16 - 4]; /* 4 */
 
 	ALIGN64 int argc;	/**< (offset 16)
 				   Number of arguments given to the program at launch time.
@@ -246,6 +248,9 @@ FREERDP_API freerdp* freerdp_new(void);
 FREERDP_API void freerdp_free(freerdp* instance);
 
 FREERDP_API BOOL freerdp_focus_required(freerdp* instance);
+
+FREERDP_API UINT32 freerdp_get_last_error(rdpContext* context);
+FREERDP_API void freerdp_set_last_error(rdpContext* context, UINT32 lastError);
 
 #ifdef __cplusplus
 }
