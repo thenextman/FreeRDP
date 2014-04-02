@@ -94,8 +94,8 @@ COMMAND_LINE_ARGUMENT_A args[] =
 	{ "drives", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Redirect all drives" },
 	{ "home-drive", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Redirect home drive" },
 	{ "clipboard", COMMAND_LINE_VALUE_BOOL, NULL, BoolValueFalse, NULL, -1, NULL, "Redirect clipboard" },
-	{ "serial", COMMAND_LINE_VALUE_REQUIRED, NULL, NULL, NULL, -1, "tty", "Redirect serial device" },
-	{ "parallel", COMMAND_LINE_VALUE_REQUIRED, NULL, NULL, NULL, -1, NULL, "Redirect parallel device" },
+	{ "serial", COMMAND_LINE_VALUE_OPTIONAL, NULL, NULL, NULL, -1, "tty", "Redirect serial device" },
+	{ "parallel", COMMAND_LINE_VALUE_OPTIONAL, NULL, NULL, NULL, -1, NULL, "Redirect parallel device" },
 	{ "smartcard", COMMAND_LINE_VALUE_OPTIONAL, NULL, NULL, NULL, -1, NULL, "Redirect smartcard device" },
 	{ "printer", COMMAND_LINE_VALUE_OPTIONAL, NULL, NULL, NULL, -1, NULL, "Redirect printer device" },
 	{ "usb", COMMAND_LINE_VALUE_REQUIRED, NULL, NULL, NULL, -1, NULL, "Redirect USB device" },
@@ -302,12 +302,18 @@ int freerdp_client_add_device_channel(rdpSettings* settings, int count, char** p
 		if (count < 3)
 			return -1;
 
-		drive = (RDPDR_DRIVE*) malloc(sizeof(RDPDR_DRIVE));
-		ZeroMemory(drive, sizeof(RDPDR_DRIVE));
+		drive = (RDPDR_DRIVE*) calloc(1, sizeof(RDPDR_DRIVE));
+
+		if (!drive)
+			return -1;
 
 		drive->Type = RDPDR_DTYP_FILESYSTEM;
-		drive->Name = _strdup(params[1]);
-		drive->Path = _strdup(params[2]);
+
+		if (count > 1)
+			drive->Name = _strdup(params[1]);
+
+		if (count > 2)
+			drive->Path = _strdup(params[2]);
 
 		freerdp_device_collection_add(settings, (RDPDR_DEVICE*) drive);
 		settings->DeviceRedirection = TRUE;
@@ -321,8 +327,10 @@ int freerdp_client_add_device_channel(rdpSettings* settings, int count, char** p
 		if (count < 1)
 			return -1;
 
-		printer = (RDPDR_PRINTER*) malloc(sizeof(RDPDR_PRINTER));
-		ZeroMemory(printer, sizeof(RDPDR_PRINTER));
+		printer = (RDPDR_PRINTER*) calloc(1, sizeof(RDPDR_PRINTER));
+
+		if (!printer)
+			return -1;
 
 		printer->Type = RDPDR_DTYP_PRINT;
 
@@ -344,25 +352,21 @@ int freerdp_client_add_device_channel(rdpSettings* settings, int count, char** p
 		if (count < 1)
 			return -1;
 
-#if defined(WIN32)
-		smartcard = (RDPDR_SMARTCARD*) malloc(sizeof(RDPDR_SMARTCARD));
-		ZeroMemory(smartcard, sizeof(RDPDR_SMARTCARD));
+		smartcard = (RDPDR_SMARTCARD*) calloc(1, sizeof(RDPDR_SMARTCARD));
+
+		if (!smartcard)
+			return -1;
 
 		smartcard->Type = RDPDR_DTYP_SMARTCARD;
 
-		freerdp_device_collection_add(settings, (RDPDR_DEVICE*) smartcard);
-#else
-		smartcard = (RDPDR_SMARTCARD*) malloc(sizeof(RDPDR_SMARTCARD));
-		ZeroMemory(smartcard, sizeof(RDPDR_SMARTCARD));
-
-		smartcard->Type = RDPDR_DTYP_SMARTCARD;
 		if (count > 1)
 			smartcard->Name = _strdup(params[1]);
+
 		if (count > 2)
 			smartcard->Path = _strdup(params[2]);
 
 		freerdp_device_collection_add(settings, (RDPDR_DEVICE*) smartcard);
-#endif
+
 		settings->DeviceRedirection = TRUE;
 
 		return 1;
@@ -374,12 +378,16 @@ int freerdp_client_add_device_channel(rdpSettings* settings, int count, char** p
 		if (count < 1)
 			return -1;
 
-		serial = (RDPDR_SERIAL*) malloc(sizeof(RDPDR_SERIAL));
-		ZeroMemory(serial, sizeof(RDPDR_SERIAL));
+		serial = (RDPDR_SERIAL*) calloc(1, sizeof(RDPDR_SERIAL));
+
+		if (!serial)
+			return -1;
 
 		serial->Type = RDPDR_DTYP_SERIAL;
+
 		if (count > 1)
 			serial->Name = _strdup(params[1]);
+
 		if (count > 2)
 			serial->Path = _strdup(params[2]);
 
@@ -395,12 +403,16 @@ int freerdp_client_add_device_channel(rdpSettings* settings, int count, char** p
 		if (count < 1)
 			return -1;
 
-		parallel = (RDPDR_PARALLEL*) malloc(sizeof(RDPDR_PARALLEL));
-		ZeroMemory(parallel, sizeof(RDPDR_PARALLEL));
+		parallel = (RDPDR_PARALLEL*) calloc(1, sizeof(RDPDR_PARALLEL));
+
+		if (!parallel)
+			return -1;
 
 		parallel->Type = RDPDR_DTYP_PARALLEL;
+
 		if (count > 1)
 			parallel->Name = _strdup(params[1]);
+
 		if (count > 1)
 			parallel->Path = _strdup(params[2]);
 

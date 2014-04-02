@@ -77,7 +77,7 @@ int bulk_decompress(rdpBulk* bulk, BYTE* pSrcData, UINT32 SrcSize, BYTE** ppDstD
 	{
 		*ppDstData = pSrcData;
 		*pDstSize = SrcSize;
-		status = 1;
+		status = 0;
 	}
 
 	if (status >= 0)
@@ -183,13 +183,13 @@ rdpBulk* bulk_new(rdpContext* context)
 
 void bulk_free(rdpBulk* bulk)
 {
-	if (bulk)
-	{
-		mppc_context_free(bulk->mppcSend);
-		mppc_context_free(bulk->mppcRecv);
+	if (!bulk)
+		return;
 
-		ncrush_context_free(bulk->ncrushRecv);
+	mppc_context_free(bulk->mppcSend);
+	mppc_context_free(bulk->mppcRecv);
 
-		free(bulk);
-	}
+	ncrush_context_free(bulk->ncrushRecv);
+
+	free(bulk);
 }
