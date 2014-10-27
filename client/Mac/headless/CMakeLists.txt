@@ -10,7 +10,6 @@ find_library(FOUNDATION_LIBRARY Foundation)
 find_library(COCOA_LIBRARY Cocoa)
 
 set(MACOSX_BUNDLE_INFO_STRING "MacFreeRDP")
-set(MACOSX_BUNDLE_ICON_FILE "FreeRDP.icns")
 set(MACOSX_BUNDLE_GUI_IDENTIFIER "com.freerdp.mac")
 set(MACOSX_BUNDLE_BUNDLE_IDENTIFIER "FreeRDP-client.Mac")
 set(MACOSX_BUNDLE_LONG_VERSION_STRING "MacFreeRDP Client Version 1.1.0")
@@ -29,14 +28,14 @@ set(${MODULE_PREFIX}_SOURCES "")
 
 set(${MODULE_PREFIX}_OBJECTIVE_SOURCES
 	main.m
-	AppDelegate.m)
+	AppDelegate.m
+	MRDPClient.m)
 
 list(APPEND ${MODULE_PREFIX}_SOURCES ${${MODULE_PREFIX}_OBJECTIVE_SOURCES})
 
 set(${MODULE_PREFIX}_HEADERS
-	AppDelegate.h)
-
-set(${MODULE_PREFIX}_RESOURCES ${MACOSX_BUNDLE_ICON_FILE})
+	AppDelegate.h
+	MRDPClient.h)
 
 add_executable(${MODULE_NAME}
 	${APP_TYPE} 

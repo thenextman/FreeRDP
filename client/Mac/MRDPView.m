@@ -18,12 +18,14 @@
  */
 
 #include <winpr/windows.h>
+#include <sys/shm.h>
 
 #include "mf_client.h"
 #import "mfreerdp.h"
 #import "MRDPView.h"
 #import "MRDPCursor.h"
 #import "PasswordDialog.h"
+#import "FreeRDS.h"
 
 #include <winpr/crt.h>
 #include <winpr/input.h>
@@ -922,6 +924,9 @@ BOOL mac_pre_connect(freerdp* instance)
 	return TRUE;
 }
 
+// TODO RM: Handle this properly
+static RDS_FRAMEBUFFER framebuffer;
+
 BOOL mac_post_connect(freerdp* instance)
 {
 	rdpGdi* gdi;
@@ -949,7 +954,22 @@ BOOL mac_post_connect(freerdp* instance)
 	//else
 	//	flags |= CLRBUF_16BPP;
 	
-	gdi_init(instance, flags, NULL);
+    // TODO RM: Make this optional
+    // TODO RM: Tidy up shared memory
+    framebuffer.fbBitsPerPixel = 32;
+    framebuffer.fbBytesPerPixel = 4;
+    
+    framebuffer.fbWidth = settings->DesktopWidth;
+    framebuffer.fbHeight = settings->DesktopHeight;
+    
+    framebuffer.fbScanline = framebuffer.fbWidth * framebuffer.fbBytesPerPixel;
+    int framebufferSize = framebuffer.fbScanline * framebuffer.fbHeight;
+    
+    framebuffer.fbSegmentId = shmget(IPC_PRIVATE, framebufferSize,
+                                     IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    framebuffer.fbSharedMemory = (BYTE*)shmat(framebuffer.fbSegmentId, 0, 0);
+    
+    gdi_init(instance, flags, framebuffer.fbSharedMemory);
 	gdi = instance->context->gdi;
 	
 	view->bitmap_context = mac_create_bitmap_context(instance->context);
