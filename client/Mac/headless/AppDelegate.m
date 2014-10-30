@@ -32,46 +32,47 @@ void mac_set_view_size(rdpContext* context, MRDPView* view);
 
 - (void) applicationDidFinishLaunching:(NSNotification*)aNotification
 {
-	int status;
-	mfContext* mfc;
-
-	_singleDelegate = self;
-	[self CreateContext];
-
-	status = [self ParseCommandLineArguments];
-
-	mfc = (mfContext*) context;
-	mfc->view = (void*) mrdpView;
-
-	if (status < 0)
-	{
-
-	}
-	else
-	{
-		PubSub_SubscribeConnectionResult(context->pubSub, AppDelegate_ConnectionResultEventHandler);
-		PubSub_SubscribeErrorInfo(context->pubSub, AppDelegate_ErrorInfoEventHandler);
-		PubSub_SubscribeEmbedWindow(context->pubSub, AppDelegate_EmbedWindowEventHandler);
-		
-		freerdp_client_start(context);
-	}
+    NSLog(@"applicationDidFinishLaunching:");
+//	int status;
+//	mfContext* mfc;
+//
+//	_singleDelegate = self;
+//	[self CreateContext];
+//
+//	status = [self ParseCommandLineArguments];
+//
+//	mfc = (mfContext*) context;
+//	mfc->view = (void*) mrdpView;
+//
+//	if (status < 0)
+//	{
+//
+//	}
+//	else
+//	{
+//		PubSub_SubscribeConnectionResult(context->pubSub, AppDelegate_ConnectionResultEventHandler);
+//		PubSub_SubscribeErrorInfo(context->pubSub, AppDelegate_ErrorInfoEventHandler);
+//		PubSub_SubscribeEmbedWindow(context->pubSub, AppDelegate_EmbedWindowEventHandler);
+//		
+//		freerdp_client_start(context);
+//	}
 }
 
 - (void) applicationWillTerminate:(NSNotification*)notification
 {
-	NSLog(@"Stopping...\n");
-	freerdp_client_stop(context);
-
-	[mrdpView releaseResources];
-	_singleDelegate = nil;
-
-	NSLog(@"Stopped.\n");
+//	NSLog(@"Stopping...\n");
+//	freerdp_client_stop(context);
+//
+//	[mrdpView releaseResources];
+//	_singleDelegate = nil;
+//
+//	NSLog(@"Stopped.\n");
 }
 
-- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender
-{
-	return YES;
-}
+//- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender
+//{
+//	return YES;
+//}
 
 - (int) ParseCommandLineArguments
 {

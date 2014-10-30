@@ -68,3 +68,8 @@ add_custom_command(TARGET ${MODULE_NAME} POST_BUILD
 		"@executable_path/../Frameworks/MacFreeRDP.framework/Versions/Current/MacFreeRDP"
 		"${CMAKE_CURRENT_BINARY_DIR}/$(CONFIGURATION)/${MODULE_OUTPUT_NAME}.app/Contents/MacOS/${MODULE_NAME}"
 	COMMENT Setting install name for MacFreeRDP)
+
+# Copy the bundle into the host application
+add_custom_command(TARGET ${MODULE_NAME} POST_BUILD
+	COMMAND cp ARGS -R ${CMAKE_CURRENT_BINARY_DIR}/$(CONFIGURATION)/${MODULE_OUTPUT_NAME}.app ${CMAKE_CURRENT_BINARY_DIR}/../../../../FreeRDPHost/FreeRDPHost/Frameworks/${MODULE_OUTPUT_NAME}.app
+	COMMENT Deploying bundle to host application)
