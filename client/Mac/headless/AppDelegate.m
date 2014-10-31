@@ -25,20 +25,21 @@ void mac_set_view_size(rdpContext* context, MRDPView* view);
 	[super dealloc];
 }
 
-@synthesize window = window;
-
+@synthesize ipcClient = ipcClient;
 
 @synthesize context = context;
 
 - (void) applicationDidFinishLaunching:(NSNotification*)aNotification
 {
-    NSArray *args = [[NSProcessInfo processInfo] arguments];
+    // TODO: Check for and validate server
+    // TODO: Write something to the console explaining what we are
     
-    printf("Arguments\n");
-    for(int i = 0; i < [args count]; i++)
-    {
-        printf("%s\n", [args[i] UTF8String]);
-    }
+    NSArray *args = [[NSProcessInfo processInfo] arguments];
+    NSString *server = args[1];
+    
+    ipcClient = [[FreeRDPIPCClient alloc] init];
+    [ipcClient initialiseWithServer:server];
+    
     
 //	int status;
 //	mfContext* mfc;
@@ -188,10 +189,10 @@ void AppDelegate_EmbedWindowEventHandler(void* ctx, EmbedWindowEventArgs* e)
 		mfContext* mfc = (mfContext*) context;
 		_singleDelegate->mrdpView = mfc->view;
 
-		if (_singleDelegate->window)
-		{
-			[[_singleDelegate->window contentView] addSubview:mfc->view];
-		}
+//		if (_singleDelegate->window)
+//		{
+//			[[_singleDelegate->window contentView] addSubview:mfc->view];
+//		}
 		
 		mac_set_view_size(context, mfc->view);
 	}

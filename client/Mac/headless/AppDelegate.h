@@ -10,17 +10,20 @@
 #import <MacFreeRDP/MRDPView.h>
 #import <MacFreeRDP/mfreerdp.h>
 
+#import "FreeRDPIPCClient.h"
+
 @interface AppDelegate : NSObject <NSApplicationDelegate>
 {
-@public
-	NSWindow* window;
-	rdpContext* context;
-	MRDPView* mrdpView;
+    FreeRDPIPCClient *ipcClient;
+    
+    @public
+        rdpContext* context;
+        MRDPView* mrdpView;
 }
 
 - (void) rdpConnectError: (NSString*) customMessage;
 
-@property (assign) IBOutlet NSWindow *window;
+@property (nonatomic, retain) FreeRDPIPCClient *ipcClient;
 @property (assign) rdpContext *context;
 
 @end

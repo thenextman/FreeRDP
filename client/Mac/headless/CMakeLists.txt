@@ -29,13 +29,16 @@ set(${MODULE_PREFIX}_SOURCES "")
 set(${MODULE_PREFIX}_OBJECTIVE_SOURCES
 	main.m
 	AppDelegate.m
-	MRDPClient.m)
+	MRDPClient.m
+	FreeRDPIPCClient.m)
 
 list(APPEND ${MODULE_PREFIX}_SOURCES ${${MODULE_PREFIX}_OBJECTIVE_SOURCES})
 
 set(${MODULE_PREFIX}_HEADERS
 	AppDelegate.h
-	MRDPClient.h)
+	MRDPClient.h
+	FreeRDPIPCClient.h
+	FreeRDPIPCServer.h)
 
 add_executable(${MODULE_NAME}
 	${APP_TYPE} 
