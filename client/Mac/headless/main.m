@@ -10,6 +10,17 @@
 
 int main(int argc, const char * argv[])
 {
+//    @autoreleasepool {
+//        NSArray *args = [[NSProcessInfo processInfo] arguments];
+//        printf("Arguments\n");
+//        for(int i = 0; i < [args count]; i++)
+//        {
+//            printf("%s\n", [args[i] UTF8String]);
+//        }
+//    }
+//    return 0;
+    
+    
     AppDelegate * delegate = [[AppDelegate alloc] init];
     
     NSAutoreleasePool * pool = [[NSAutoreleasePool alloc] init];

@@ -32,7 +32,14 @@ void mac_set_view_size(rdpContext* context, MRDPView* view);
 
 - (void) applicationDidFinishLaunching:(NSNotification*)aNotification
 {
-    NSLog(@"applicationDidFinishLaunching:");
+    NSArray *args = [[NSProcessInfo processInfo] arguments];
+    
+    printf("Arguments\n");
+    for(int i = 0; i < [args count]; i++)
+    {
+        printf("%s\n", [args[i] UTF8String]);
+    }
+    
 //	int status;
 //	mfContext* mfc;
 //

@@ -71,5 +71,5 @@ add_custom_command(TARGET ${MODULE_NAME} POST_BUILD
 
 # Copy the bundle into the host application
 add_custom_command(TARGET ${MODULE_NAME} POST_BUILD
-	COMMAND cp ARGS -R ${CMAKE_CURRENT_BINARY_DIR}/$(CONFIGURATION)/${MODULE_OUTPUT_NAME}.app ${CMAKE_CURRENT_BINARY_DIR}/../../../../FreeRDPHost/FreeRDPHost/Frameworks/${MODULE_OUTPUT_NAME}.app
+	COMMAND ditto ARGS ${CMAKE_CURRENT_BINARY_DIR}/$(CONFIGURATION)/${MODULE_OUTPUT_NAME}.app ${CMAKE_CURRENT_BINARY_DIR}/../../../../FreeRDPHost/FreeRDPHost/Frameworks/${MODULE_OUTPUT_NAME}.app
 	COMMENT Deploying bundle to host application)
