@@ -961,6 +961,8 @@ BOOL mac_post_connect(freerdp* instance)
                                      IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     framebuffer.fbSharedMemory = (BYTE*)shmat(framebuffer.fbSegmentId, 0, 0);
     
+    printf("fbSegmentId: %i", framebuffer.fbSegmentId);
+    
     gdi_init(instance, flags, framebuffer.fbSharedMemory);
     gdi = instance->context->gdi;
     
