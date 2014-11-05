@@ -15,6 +15,7 @@
     NSConnection *serverConnection;
     rdpContext *context;
     MRDPClient *mrdpClient;
+    id hostProxy;
 }
 
 - (void)initialiseWithServer:(NSString *)registeredName;
@@ -34,9 +35,10 @@
 - (int)setStringSettingForIdentifier:(int)identifier withValue:(NSString *)value;
 - (double)getDoubleSettingForIdentifier:(int)identifier;
 - (int)setDoubleSettingForIdentifier:(int)identifier withValue:(double)value;
+- (void)setNeedsDisplayInRect:(NSRect)newDrawRect;
 
 @property (nonatomic, retain) NSConnection *serverConnection;
 @property (assign) rdpContext *context;
-
+@property (nonatomic, retain) id hostProxy;
 
 @end

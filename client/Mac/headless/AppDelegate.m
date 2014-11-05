@@ -194,7 +194,7 @@ void AppDelegate_EmbedWindowEventHandler(void* ctx, EmbedWindowEventArgs* e)
 //			[[_singleDelegate->window contentView] addSubview:mfc->view];
 //		}
 		
-		mac_set_view_size(context, mfc->view);
+//		mac_set_view_size(context, mfc->view);
 	}
 }
 

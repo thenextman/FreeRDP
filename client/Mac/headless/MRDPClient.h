@@ -37,6 +37,7 @@
     BOOL skipResizeOnce;
     BOOL saveInitialDragLoc;
     BOOL skipMoveWindowOnce;
+    id delegate;
 
     @public
     NSPasteboard* pasteboard_rd; /* for reading from clipboard */
@@ -44,6 +45,7 @@
     int pasteboard_changecount;
     int pasteboard_format;
     int is_connected;
+    int framebufferId;
 }
 
 - (int)  rdpStart :(rdpContext*) rdp_context;
@@ -53,7 +55,11 @@
 - (void) onPasteboardTimerFired :(NSTimer *) timer;
 - (void) releaseResources;
 
+- (void)setNeedsDisplayInRect:(NSRect)newDrawRect;
+
 @property (assign) int is_connected;
+@property (assign) int framebufferId;
+@property (assign) id delegate;
 
 @end
 

@@ -16,6 +16,7 @@
 #import "MacFreeRDP/MRDPCursor.h"
 #import "MacFreeRDP/PasswordDialog.h"
 #import "FreeRDS.h"
+#import "FreeRDPIPCClient.h"
 
 #include <winpr/crt.h>
 #include <winpr/input.h>
@@ -87,6 +88,8 @@ struct rgba_data
 @implementation MRDPClient
 
 @synthesize is_connected;
+@synthesize framebufferId;
+@synthesize delegate;
 
 - (int) rdpStart:(rdpContext*) rdp_context
 {
@@ -229,7 +232,7 @@ DWORD mac_client_thread(void* param)
         rdpContext* context = (rdpContext*) param;
         mfContext* mfc = (mfContext*) context;
         freerdp* instance = context->instance;
-        MRDPView* view = mfc->view;
+        MRDPClient* view = mfc->view;
         rdpSettings* settings = context->settings;
         
         status = freerdp_connect(context->instance);
@@ -335,17 +338,17 @@ DWORD mac_client_thread(void* param)
     }
 }
 
-- (id)initWithFrame:(NSRect)frame
-{
-    self = [super initWithFrame:frame];
-    
-    if (self)
-    {
-        // Initialization code here.
-    }
-    
-    return self;
-}
+//- (id)initWithFrame:(NSRect)frame
+//{
+//    self = [super initWithFrame:frame];
+//    
+//    if (self)
+//    {
+//        // Initialization code here.
+//    }
+//    
+//    return self;
+//}
 
 - (void) viewDidLoad
 {
@@ -927,7 +930,7 @@ BOOL mac_post_connect(freerdp* instance)
     rdpPointer rdp_pointer;
     mfContext* mfc = (mfContext*) instance->context;
     
-    MRDPView* view = (MRDPView*) mfc->view;
+    MRDPClient* view = (MRDPClient*) mfc->view;
     
     ZeroMemory(&rdp_pointer, sizeof(rdpPointer));
     rdp_pointer.size = sizeof(rdpPointer);
@@ -962,6 +965,8 @@ BOOL mac_post_connect(freerdp* instance)
     framebuffer.fbSharedMemory = (BYTE*)shmat(framebuffer.fbSegmentId, 0, 0);
     
     printf("fbSegmentId: %i", framebuffer.fbSegmentId);
+    
+    view.framebufferId = framebuffer.fbSegmentId;
     
     gdi_init(instance, flags, framebuffer.fbSharedMemory);
     gdi = instance->context->gdi;
@@ -1173,7 +1178,7 @@ void mac_end_paint(rdpContext* context)
     NSRect newDrawRect;
     int ww, wh, dw, dh;
     mfContext* mfc = (mfContext*) context;
-    MRDPView* view = (MRDPView*) mfc->view;
+    MRDPClient* view = (MRDPClient*) mfc->view;
     
     gdi = context->gdi;
     
@@ -1213,11 +1218,19 @@ void mac_end_paint(rdpContext* context)
         newDrawRect.size.width = newDrawRect.size.width + 1;
     }
     
+    // TODO...
     windows_to_apple_cords(mfc->view, &newDrawRect);
     
+    // TODO...
     [view setNeedsDisplayInRect:newDrawRect];
     
     gdi->primary->hdc->hwnd->ninvalid = 0;
+}
+
+- (void)setNeedsDisplayInRect:(NSRect)newDrawRect
+{
+    FreeRDPIPCClient *client = (FreeRDPIPCClient *)delegate;
+    [client setNeedsDisplayInRect:newDrawRect];
 }
 
 // TODO RM
@@ -1509,9 +1522,9 @@ void cliprdr_send_supported_format_list(freerdp* instance)
  *
  */
 
-void windows_to_apple_cords(MRDPView* view, NSRect* r)
+void windows_to_apple_cords(MRDPClient* view, NSRect* r)
 {
-    r->origin.y = [view frame].size.height - (r->origin.y + r->size.height);
+    //r->origin.y = [view frame].size.height - (r->origin.y + r->size.height);
 }
 
 @end

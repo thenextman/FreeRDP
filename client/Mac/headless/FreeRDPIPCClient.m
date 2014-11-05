@@ -17,10 +17,11 @@ static NSString* const MRDPClientDidConnectWithResultNotification = @"MRDPViewDi
 
 @synthesize serverConnection;
 @synthesize context;
+@synthesize hostProxy;
 
 - (void)initialiseWithServer:(NSString *)registeredName
 {
-    id hostProxy = (id)[NSConnection rootProxyForConnectionWithRegisteredName:registeredName host:nil];
+    hostProxy = (id)[NSConnection rootProxyForConnectionWithRegisteredName:registeredName host:nil];
     [hostProxy setProtocolForProxy:@protocol(FreeRDPIPCServer)];
     
     if(hostProxy != nil)
@@ -29,9 +30,49 @@ static NSString* const MRDPClientDidConnectWithResultNotification = @"MRDPViewDi
         NSString *clientName = [NSString stringWithFormat:@"%@.%@", clientBaseName, serverID];
         
         serverConnection = [NSConnection serviceConnectionWithName:clientName rootObject:self];
+        [serverConnection runInNewThread];
         [serverConnection registerName:clientName];
         
         [hostProxy clientConnected:clientName];
+    }
+}
+
+- (void)viewDidConnect:(NSNotification *)notification
+{
+    rdpContext *ctx;
+    
+    [[[notification userInfo] valueForKey:@"context"] getValue:&ctx];
+    
+    if(ctx == self->context)
+    {
+        NSLog(@"viewDidConnect:");
+        
+        ConnectionResultEventArgs *e = nil;
+        [[[notification userInfo] valueForKey:@"connectionArgs"] getValue:&e];
+        
+        if(e->result == 0)
+        {
+            mfContext* mfc = (mfContext*)context;
+            MRDPClient* view = (MRDPClient*) mfc->view;
+            view.delegate = self;
+            
+            [hostProxy rdpConnected:view.framebufferId];
+//            if(delegate && [delegate respondsToSelector:@selector(didConnect)])
+//            {
+//                // Better to replace this (and others in this class) with dispatch_async(dispatch_get_main_queue(), ^{ ... }) ?
+//                // It doesn't care about run loop modes...
+//                [delegate performSelectorOnMainThread:@selector(didConnect) withObject:nil waitUntilDone:true];
+//            }
+        }
+        else
+        {
+//            if(delegate && [delegate respondsToSelector:@selector(didFailToConnectWithError:)])
+//            {
+//                NSNumber *connectErrorCode =  [NSNumber numberWithUnsignedInt:freerdp_get_last_error(ctx)];
+//                
+//                [delegate performSelectorOnMainThread:@selector(didFailToConnectWithError:) withObject:connectErrorCode waitUntilDone:true];
+//            }
+        }
     }
 }
 
@@ -56,11 +97,16 @@ static NSString* const MRDPClientDidConnectWithResultNotification = @"MRDPViewDi
 
 - (void)start
 {
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(viewDidConnect:) name:MRDPClientDidConnectWithResultNotification object:nil];
+    
     freerdp_client_start(context);
 }
 
 - (void)stop
 {
+    PubSub_UnsubscribeConnectionResult(context->pubSub, ConnectionResultEventHandler);
+    PubSub_UnsubscribeErrorInfo(context->pubSub, ErrorInfoEventHandler);
+    
     freerdp_client_stop(context);
     
     freerdp_client_context_free(context);
@@ -154,6 +200,11 @@ static NSString* const MRDPClientDidConnectWithResultNotification = @"MRDPViewDi
     return freerdp_set_param_double(context->settings, identifier, value);
 }
 
+- (void)setNeedsDisplayInRect:(NSRect)newDrawRect
+{
+    [hostProxy drawDirtyRect:newDrawRect.origin.x Y:newDrawRect.origin.y HEIGHT:newDrawRect.size.height WIDTH:newDrawRect.size.width];
+}
+
 /**
  * Client Interface
  */
@@ -170,17 +221,18 @@ void mfreerdp_client_global_uninit()
 
 int mfreerdp_client_start(rdpContext* context)
 {
-    MRDPView* view;
+    MRDPClient* view;
     mfContext* mfc = (mfContext*) context;
     
     if (mfc->view == NULL)
     {
         // view not specified beforehand. Create view dynamically
-        mfc->view = [[MRDPView alloc] initWithFrame : NSMakeRect(0, 0, context->settings->DesktopWidth, context->settings->DesktopHeight)];
-        mfc->view_ownership = TRUE;
+        mfc->view = [[MRDPClient alloc] init];
+//        mfc->view = [[MRDPView alloc] initWithFrame : NSMakeRect(0, 0, context->settings->DesktopWidth, context->settings->DesktopHeight)];
+//        mfc->view_ownership = TRUE;
     }
     
-    view = (MRDPView*) mfc->view;
+    view = (MRDPClient*) mfc->view;
     [view rdpStart:context];
     
     return 0;
@@ -321,7 +373,7 @@ void ConnectionResultEventHandler(void* ctx, ConnectionResultEventArgs* e)
         NSLog(@"ConnectionResultEventHandler");
         
         rdpContext* context = (rdpContext*) ctx;
-        
+
         NSDictionary *userInfo = [NSDictionary dictionaryWithObjectsAndKeys:[NSValue valueWithPointer:context], @"context",
                                   [NSValue valueWithPointer:e], @"connectionArgs",
                                   [NSNumber numberWithInt:connectErrorCode], @"connectErrorCode", nil];
