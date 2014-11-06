@@ -392,7 +392,9 @@ DWORD mac_client_thread(void* param)
 
 - (void) mouseMoved:(NSEvent *)event
 {
-    [super mouseMoved:event];
+    printf("mouse moved!");
+    
+    //[super mouseMoved:event];
     
     if (!is_connected)
         return;

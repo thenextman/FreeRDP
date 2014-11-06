@@ -23,6 +23,7 @@
 - (void)start;
 - (void)stop;
 - (void)restart;
+- (void)mouseMoved:(NSEvent *)event;
 - (BOOL)getBooleanSettingForIdentifier:(int)identifier;
 - (int)setBooleanSettingForIdentifier:(int)identifier withValue:(BOOL)value;
 - (int)getIntegerSettingForIdentifier:(int)identifier;

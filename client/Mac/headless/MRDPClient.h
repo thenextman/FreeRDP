@@ -57,6 +57,8 @@
 
 - (void)setNeedsDisplayInRect:(NSRect)newDrawRect;
 
+- (void) mouseMoved:(NSEvent *)event;
+
 @property (assign) int is_connected;
 @property (assign) int framebufferId;
 @property (assign) id delegate;

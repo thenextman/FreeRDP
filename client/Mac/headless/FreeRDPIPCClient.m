@@ -117,6 +117,16 @@ static NSString* const MRDPClientDidConnectWithResultNotification = @"MRDPViewDi
     
 }
 
+- (void)mouseMoved:(NSEvent *)event
+{
+    printf("moving mouse!");
+    
+    mfContext* mfc = (mfContext*)context;
+    MRDPClient* view = (MRDPClient*) mfc->view;
+    
+    [view mouseMoved:event];
+}
+
 - (void)createContext
 {
     RDP_CLIENT_ENTRY_POINTS clientEntryPoints;
@@ -328,7 +338,8 @@ void mf_scale_mouse_event(void* context, rdpInput* input, UINT16 flags, UINT16 x
     dh = mfc->context.settings->DesktopHeight;
     
     // Convert to windows coordinates
-    y = [view frame].size.height - y;
+    //y = [view frame].size.height - y;
+    y = 480 - y;
     
     if (!mfc->context.settings->SmartSizing || ((ww == dw) && (wh == dh)))
     {
